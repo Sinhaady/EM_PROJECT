@@ -10,7 +10,7 @@ const jwtSecret =
   (process.env.NODE_ENV === "production" ? undefined : "eventm-development-jwt-secret");
 const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
 
-// ─── Helper: sign JWT and send as httpOnly cookie ─────────────────────────────
+/// ─── Helper: sign JWT and send as httpOnly cookie ─────────────────────────────
 export const sendTokenResponse = (user, statusCode, res) => {
   // Using user.name instead of username to match the User schema
   const token = jwt.sign(
@@ -28,14 +28,16 @@ export const sendTokenResponse = (user, statusCode, res) => {
 
   res.cookie("eventM_token", token, cookieOptions);
   user.password = undefined;
-  res.status(statusCode).json({ success: true, user });
+  
+  // ADD THE TOKEN HERE 👇
+  res.status(statusCode).json({ success: true, token, user }); 
 };
 
 // ─── @route  POST /api/auth/register ─────────────────────────────────────────
 // ─── @access Public
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password ,role} = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -58,6 +60,7 @@ export const register = async (req, res) => {
       name,
       email,
       password,
+      role,
       authProvider: "local",
     });
 

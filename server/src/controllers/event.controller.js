@@ -1,27 +1,26 @@
 import Event from "../../models/Event.js";
+import User from "../../models/User.js"; 
+import { sendEventConfirmationEmail } from "./emailService.js";
 
 // ─── @route  POST /api/events ────────────────────────────────────────────────
 // ─── @access Private (Organizers & Admins)
 export const createEvent = async (req, res) => {
   try {
-    // We spread the req.body to grab title, description, date, location, etc.
-    // Note: We assume the image { url, publicId } is already uploaded and passed in the body.
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Event image is required" });
     }
-   const eventData = {
+    const eventData = {
       ...req.body,
       createdBy: req.user.id,
       image: {
-        url: req.file.path,       // The live Cloudinary URL
-        publicId: req.file.filename // The unique ID for future deletions
+        url: req.file.path,       
+        publicId: req.file.filename 
       }
     };
     const event = await Event.create(eventData);
     res.status(201).json({ success: true, event });
 
   } catch (error) {
-    // Handle the unique index error (preventing an organizer from making duplicate event titles)
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -37,7 +36,6 @@ export const createEvent = async (req, res) => {
 // ─── @access Public
 export const getAllEvents = async (req, res) => {
   try {
-    // Basic Filtering Engine: Allows frontend to call /api/events?category=Tech&status=PUBLISHED
     const { category, status, type } = req.query;
     let query = {};
     
@@ -45,7 +43,6 @@ export const getAllEvents = async (req, res) => {
     if (status) query.status = status;
     if (type) query.type = type;
 
-    // Fetch events, sorted by date (newest first), and attach the creator's name
     const events = await Event.find(query)
       .sort({ date: 1 })
       .populate("createdBy", "name email");
@@ -57,12 +54,11 @@ export const getAllEvents = async (req, res) => {
   }
 };
 
+// ─── @route  GET /api/events/categories ──────────────────────────────────────
+// ─── @access Public
 export const getUniqueCategories = async (req, res) => {
   try {
-    // MongoDB's .distinct() method scans the Event collection and returns an 
-    // array of all the unique strings found in the "category" field.
     const categories = await Event.distinct("category");
-
     res.status(200).json({ 
       success: true, 
       count: categories.length, 
@@ -73,7 +69,6 @@ export const getUniqueCategories = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 
 // ─── @route  GET /api/events/:id ─────────────────────────────────────────────
 // ─── @access Public
@@ -102,15 +97,13 @@ export const updateEvent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    // CRITICAL OWNERSHIP CHECK
-    // Ensure the user updating the event actually created it, unless they are an admin
     if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "You are not authorized to edit this event" });
     }
 
     event = await Event.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
-      runValidators: true, // Ensures capacity or price don't accidentally get set to negative numbers
+      runValidators: true,
     });
 
     res.status(200).json({ success: true, event });
@@ -130,16 +123,58 @@ export const deleteEvent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    // CRITICAL OWNERSHIP CHECK
     if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "You are not authorized to delete this event" });
     }
 
     await event.deleteOne();
-
     res.status(200).json({ success: true, message: "Event deleted successfully" });
   } catch (error) {
     console.error("Delete Event Error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// ─── @route  POST /api/events/:eventId/join ──────────────────────────────────
+// ─── @access Private
+export const joinEvent = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.eventId);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    const user = await User.findById(req.user.id); 
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const isAlreadyRegistered = event.attendees.some(
+      (attendeeId) => attendeeId.toString() === user._id.toString()
+    );
+
+    if (isAlreadyRegistered) {
+      return res.status(400).json({ success: false, message: "Already registered for this event" });
+    }
+
+    event.attendees.push(user._id);
+    await event.save();
+
+    sendEventConfirmationEmail({
+      to: user.email,
+      userName: user.name,
+      event: {
+        title: event.title,
+        description: event.description,
+        date: event.date,
+        location: event.location,
+        category: event.category,
+      },
+    }).catch((err) => console.error("Email send failed:", err));
+
+    res.status(200).json({ success: true, message: "Successfully joined event!" });
+  } catch (err) {
+    console.error("Join Event Error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 };

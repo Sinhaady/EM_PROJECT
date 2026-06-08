@@ -22,7 +22,7 @@ export const createBookingOrder = async (req, res) => {
   try {
     const { eventId, tickets } = req.body;
     const ticketCount = Number(tickets);
-    const userId = req.user.id;
+    const userId = req.user.id; 
 
     if (!eventId || !Number.isInteger(ticketCount) || ticketCount < 1) {
       return res.status(400).json({
@@ -44,6 +44,14 @@ export const createBookingOrder = async (req, res) => {
     }
 
     const totalAmount = event.price * ticketCount;
+
+    if (totalAmount > 0 && !getRazorpay()) {
+      return res.status(500).json({
+        success: false,
+        message: "Razorpay is not configured",
+      });
+    }
+
     const booking = await Booking.create({
       user: userId,
       event: eventId,
@@ -66,12 +74,6 @@ export const createBookingOrder = async (req, res) => {
     }
 
     const razorpay = getRazorpay();
-    if (!razorpay) {
-      return res.status(500).json({
-        success: false,
-        message: "Razorpay is not configured",
-      });
-    }
 
     const order = await razorpay.orders.create({
       amount: totalAmount * 100,
@@ -86,6 +88,13 @@ export const createBookingOrder = async (req, res) => {
     });
   } catch (error) {
     console.error("Create Booking Error:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have a booking for this event.",
+      });
+    }
+
     res.status(500).json({ success: false, message: "Server error" });
   }
 };

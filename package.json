@@ -1,0 +1,11 @@
+{
+  "name": "em-project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "client": "npm run dev --prefix client",
+    "server": "npm run dev --prefix server",
+    "client:build": "npm run build --prefix client",
+    "server:check": "npm test --prefix server"
+  }
+}
