@@ -3,6 +3,7 @@ import Razorpay from "razorpay";
 import Booking from "../../models/Booking.js";
 import Event from "../../models/Event.js";
 import Transaction from "../../models/Transaction.js";
+import { sendBookingConfirmation } from "../../utils/email.utils.js";
 import dotenv from "dotenv";
 
 dotenv.config({ quiet: true });
@@ -15,6 +16,18 @@ const getRazorpay = () => {
   return new Razorpay({
     key_id: process.env.RAZORPAY_KEY_ID,
     key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+};
+
+const hasEventEnded = (event) => {
+  const eventDate = new Date(event.date);
+
+  return !Number.isNaN(eventDate.getTime()) && eventDate < new Date();
+};
+
+const sendBookingEmail = (user, event, booking) => {
+  sendBookingConfirmation(user, event, booking).catch((error) => {
+    console.error("Booking confirmation email failed:", error.message);
   });
 };
 
@@ -34,6 +47,20 @@ export const createBookingOrder = async (req, res) => {
     const event = await Event.findById(eventId);
     if (!event) {
       return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    if (event.status !== "PUBLISHED") {
+      return res.status(400).json({
+        success: false,
+        message: "This event is not open for booking yet.",
+      });
+    }
+
+    if (hasEventEnded(event)) {
+      return res.status(400).json({
+        success: false,
+        message: "This event has already ended. Tickets are no longer available.",
+      });
     }
 
     if (event.registeredCount + ticketCount > event.capacity) {
@@ -65,6 +92,8 @@ export const createBookingOrder = async (req, res) => {
 
       event.registeredCount += ticketCount;
       await event.save();
+
+      sendBookingEmail(req.user, event, booking);
 
       return res.status(201).json({
         success: true,
@@ -136,11 +165,35 @@ export const verifyPayment = async (req, res) => {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
+    const event = await Event.findById(booking.event);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    if (event.status !== "PUBLISHED") {
+      booking.status = "CANCELLED";
+      await booking.save();
+
+      return res.status(400).json({
+        success: false,
+        message: "This event is not open for booking yet.",
+      });
+    }
+
+    if (hasEventEnded(event)) {
+      booking.status = "CANCELLED";
+      await booking.save();
+
+      return res.status(400).json({
+        success: false,
+        message: "This event has already ended. Payment cannot be confirmed.",
+      });
+    }
+
     await Event.findByIdAndUpdate(booking.event, {
       $inc: { registeredCount: booking.tickets },
     });
 
-    const event = await Event.findById(booking.event);
     await Transaction.create({
       bookingId: booking._id,
       eventId: booking.event,
@@ -150,6 +203,8 @@ export const verifyPayment = async (req, res) => {
       razorpayOrderId: razorpay_order_id,
       razorpayPaymentId: razorpay_payment_id,
     });
+
+    sendBookingEmail(req.user, event, booking);
 
     res.status(200).json({
       success: true,
@@ -164,7 +219,7 @@ export const verifyPayment = async (req, res) => {
 export const getMyBookings = async (req, res) => {
   try {
     const bookings = await Booking.find({ user: req.user.id })
-      .populate("event", "title date location image")
+      .populate("event", "title date location image category price capacity registeredCount status")
       .sort({ createdAt: -1 });
 
     res.status(200).json({ success: true, bookings });
@@ -184,7 +239,7 @@ export const getBookingById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    if (booking.user._id.toString() !== req.user.id && req.user.role !== "admin") {
+    if (booking.user._id.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({
         success: false,
         message: "Not authorized to view this booking",
@@ -206,7 +261,7 @@ export const cancelBooking = async (req, res) => {
       return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    if (booking.user.toString() !== req.user.id && req.user.role !== "admin") {
+    if (booking.user.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({
         success: false,
         message: "Not authorized to cancel this booking",

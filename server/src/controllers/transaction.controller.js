@@ -33,7 +33,7 @@ export const getTransactionById = async (req, res) => {
     }
 
     // Security Guard: Only the buyer or an admin can view this specific receipt
-    if (transaction.userId._id.toString() !== req.user.id && req.user.role !== "admin") {
+    if (transaction.userId._id.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({ success: false, message: "Not authorized to view this receipt" });
     }
 
@@ -56,7 +56,7 @@ export const getEventTransactions = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
+    if (event.createdBy.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({ 
         success: false, 
         message: "Access denied. You can only view statements for your own events." 

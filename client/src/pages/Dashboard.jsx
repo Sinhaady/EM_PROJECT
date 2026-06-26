@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "react-toastify";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 import {
-  LayoutDashboard, Ticket, BarChart3, User, Calendar,
+  LayoutDashboard, Ticket, BarChart3, User, Calendar, CalendarPlus,
   MapPin, Clock, ChevronRight, LogOut, Settings,
   TrendingUp, Star, Bell, Search, Menu, X,
-  CheckCircle, XCircle, AlertCircle, Download, ExternalLink,
+  CheckCircle, XCircle, AlertCircle, Download, ExternalLink, Trash2,
 } from "lucide-react";
 
 // ── Animation variants ─────────────────────────────────────────────────────────
@@ -22,8 +23,171 @@ const fmtDate = (d) =>
   new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 const fmtTime = (d) =>
   new Date(d).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+const fmtCurrency = (value = 0) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 const isUpcoming = (d) => new Date(d) > new Date();
 const isPast = (d) => new Date(d) <= new Date();
+const getImageUrl = (image) => (typeof image === "string" ? image : image?.url);
+const safeFileName = (value = "ticket") =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ticket";
+
+const drawWrappedText = (ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) => {
+  const words = String(text || "").split(" ");
+  const lines = [];
+  let line = "";
+
+  words.forEach((word) => {
+    const testLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  });
+
+  if (line) lines.push(line);
+
+  lines.slice(0, maxLines).forEach((lineText, index) => {
+    const suffix = index === maxLines - 1 && lines.length > maxLines ? "..." : "";
+    ctx.fillText(`${lineText}${suffix}`, x, y + index * lineHeight);
+  });
+
+  return y + Math.min(lines.length, maxLines) * lineHeight;
+};
+
+const drawPosterCode = (ctx, value, x, y, size) => {
+  const cells = 13;
+  const gap = 5;
+  const cellSize = (size - gap * (cells - 1)) / cells;
+  const seed = [...String(value)].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillRect(x, y, size, size);
+
+  for (let row = 0; row < cells; row += 1) {
+    for (let col = 0; col < cells; col += 1) {
+      const marker =
+        (row < 3 && col < 3) ||
+        (row < 3 && col > cells - 4) ||
+        (row > cells - 4 && col < 3);
+      const filled = marker || ((row * 17 + col * 31 + seed) % 5 < 2);
+
+      if (filled) {
+        ctx.fillStyle = marker ? "#111827" : "#4f46e5";
+        ctx.fillRect(
+          x + col * (cellSize + gap),
+          y + row * (cellSize + gap),
+          cellSize,
+          cellSize,
+        );
+      }
+    }
+  }
+};
+
+const downloadTicketPoster = async (event, attendee) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1600;
+  const ctx = canvas.getContext("2d");
+  const bookingId = event.bookingId || event._id;
+
+  const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  bg.addColorStop(0, "#111827");
+  bg.addColorStop(0.42, "#312e81");
+  bg.addColorStop(1, "#0e7490");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.beginPath();
+  ctx.arc(940, 160, 250, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(100, 1420, 320, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(3,7,18,0.68)";
+  ctx.roundRect(86, 96, 908, 1408, 48);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 42px Arial";
+  ctx.fillText("VENTRO", 140, 180);
+  ctx.font = "700 24px Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.64)";
+  ctx.fillText("ADMIT ONE", 140, 222);
+
+  ctx.fillStyle = "#67e8f9";
+  ctx.font = "800 26px Arial";
+  ctx.fillText(String(event.category || "EVENT").toUpperCase(), 140, 320);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 78px Arial";
+  const afterTitleY = drawWrappedText(ctx, event.title, 140, 410, 800, 88, 3);
+
+  ctx.strokeStyle = "rgba(255,255,255,0.2)";
+  ctx.setLineDash([18, 16]);
+  ctx.beginPath();
+  ctx.moveTo(140, afterTitleY + 50);
+  ctx.lineTo(940, afterTitleY + 50);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const detailsY = afterTitleY + 150;
+  const details = [
+    ["ATTENDEE", attendee?.name || "Guest"],
+    ["DATE", fmtDate(event.date)],
+    ["TIME", fmtTime(event.date)],
+    ["LOCATION", event.location || "Online / TBA"],
+    ["TICKETS", `${event.tickets || 1}`],
+    ["BOOKING ID", String(bookingId).slice(-12).toUpperCase()],
+  ];
+
+  details.forEach(([label, value], index) => {
+    const x = index % 2 === 0 ? 140 : 560;
+    const y = detailsY + Math.floor(index / 2) * 150;
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = "800 22px Arial";
+    ctx.fillText(label, x, y);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 34px Arial";
+    drawWrappedText(ctx, value, x, y + 48, 340, 40, 2);
+  });
+
+  ctx.fillStyle = "rgba(255,255,255,0.1)";
+  ctx.roundRect(140, 1160, 800, 220, 28);
+  ctx.fill();
+  drawPosterCode(ctx, bookingId, 170, 1190, 160);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 34px Arial";
+  ctx.fillText("Show this ticket at entry", 370, 1245);
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
+  ctx.font = "600 24px Arial";
+  ctx.fillText("Generated from your Ventro dashboard", 370, 1290);
+  ctx.fillText(`Issued ${fmtDate(event.bookedAt || new Date())}`, 370, 1328);
+
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = "700 20px Arial";
+  ctx.fillText("This poster is your personal booking confirmation.", 140, 1440);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 1));
+  if (!blob) throw new Error("Unable to generate ticket poster");
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${safeFileName(event.title)}-${String(bookingId).slice(-6)}-ticket.png`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
 
 // ── Category accent colours ────────────────────────────────────────────────────
 const CAT_COLORS = {
@@ -67,6 +231,7 @@ const StatCard = ({ label, value, sub, gradient, icon: Icon }) => (
 const EventRow = ({ event, onLeave }) => {
   const colors = cat(event.category);
   const upcoming = isUpcoming(event.date);
+  const imageUrl = getImageUrl(event.image);
   return (
     <motion.div
       variants={fadeUp}
@@ -74,8 +239,8 @@ const EventRow = ({ event, onLeave }) => {
     >
       {/* Image / placeholder */}
       <div className="shrink-0 h-16 w-16 rounded-2xl overflow-hidden bg-white/10">
-        {event.image ? (
-          <img src={event.image} alt={event.title} className="h-full w-full object-cover" />
+        {imageUrl ? (
+          <img src={imageUrl} alt={event.title} className="h-full w-full object-cover" />
         ) : (
           <div className={`h-full w-full flex items-center justify-center ${colors.bg}`}>
             <Calendar className={`h-7 w-7 ${colors.text}`} />
@@ -109,7 +274,7 @@ const EventRow = ({ event, onLeave }) => {
         </Link>
         {upcoming && (
           <button
-            onClick={() => onLeave(event._id)}
+            onClick={() => onLeave(event.bookingId)}
             className="h-9 px-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-all"
           >
             Cancel
@@ -122,59 +287,173 @@ const EventRow = ({ event, onLeave }) => {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { refreshUser, user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [joinedEvents, setJoinedEvents] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [organizerStats, setOrganizerStats] = useState({
+    totalEvents: 0,
+    totalBookings: 0,
+    totalTicketsSold: 0,
+    totalRevenue: 0,
+    perEventSales: [],
+  });
   const [loading, setLoading] = useState(true);
+  const [accountRole, setAccountRole] = useState(user?.role || "attendee");
   const [profileForm, setProfileForm] = useState({ name: user?.name || "", bio: "", phone: "" });
   const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error"
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   useEffect(() => {
-    fetchJoined();
+    fetchDashboard();
   }, []);
 
-  const fetchJoined = async () => {
+  useEffect(() => {
+    setProfileForm((current) => ({
+      ...current,
+      name: user?.name || current.name,
+      bio: user?.bio || current.bio || "",
+      phone: user?.phone || current.phone || "",
+    }));
+    setAccountRole(user?.role || "attendee");
+  }, [user]);
+
+  const fetchDashboard = async () => {
     try {
       setLoading(true);
-      const res = await api.get("/users/me/events");           // adjust endpoint to yours
-      setJoinedEvents(res.data.events || []);
-    } catch {
+      const [bookingsResponse, profileResponse] = await Promise.all([
+        api.get("/bookings/my-bookings"),
+        api.get("/users/profile"),
+      ]);
+
+      setBookings(bookingsResponse.data.bookings || []);
+
+      const profile = profileResponse.data.user;
+      setAccountRole(profile?.role || user?.role || "attendee");
+      setProfileForm({
+        name: profile?.name || "",
+        bio: profile?.bio || "",
+        phone: profile?.phone || "",
+      });
+
+      if (profile?.role === "organizer" || profile?.role === "super_admin") {
+        try {
+          const organizerResponse = await api.get("/users/organizer-stats");
+          setOrganizerStats((current) => ({
+            ...current,
+            ...(organizerResponse.data.stats || {}),
+            perEventSales: organizerResponse.data.stats?.perEventSales || [],
+          }));
+        } catch (statsError) {
+          console.error("Organizer stats load failed", statsError);
+        }
+      } else {
+        setOrganizerStats({
+          totalEvents: 0,
+          totalBookings: 0,
+          totalTicketsSold: 0,
+          totalRevenue: 0,
+          perEventSales: [],
+        });
+      }
+    } catch (error) {
+      console.error("Dashboard load failed", error);
+      toast.error(error.response?.data?.message || "Unable to load dashboard details.");
       // fallback: empty array — UI handles it gracefully
-      setJoinedEvents([]);
+      setBookings([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLeave = async (eventId) => {
+  const handleLeave = async (bookingId) => {
     try {
-      await api.post(`/events/${eventId}/leave`);
-      setJoinedEvents((prev) => prev.filter((e) => e._id !== eventId));
+      await api.put(`/bookings/${bookingId}/cancel`);
+      setBookings((prev) => prev.map((booking) =>
+        booking._id === bookingId ? { ...booking, status: "CANCELLED" } : booking,
+      ));
+      toast.success("Booking cancelled.");
     } catch (err) {
       console.error("Leave failed", err);
+      toast.error(err.response?.data?.message || "Unable to cancel this booking.");
     }
   };
 
   const handleSaveProfile = async () => {
     setSaveStatus("saving");
     try {
-      await api.patch("/users/me", profileForm);
+      const response = await api.put("/users/profile", profileForm);
+      setProfileForm({
+        name: response.data.user?.name || "",
+        bio: response.data.user?.bio || "",
+        phone: response.data.user?.phone || "",
+      });
+      await refreshUser?.();
       setSaveStatus("saved");
+      toast.success("Profile updated.");
       setTimeout(() => setSaveStatus(null), 2500);
-    } catch {
+    } catch (error) {
+      console.error("Profile save failed", error);
       setSaveStatus("error");
+      toast.error(error.response?.data?.message || "Unable to update profile.");
       setTimeout(() => setSaveStatus(null), 2500);
     }
   };
 
-  const handleLogout = () => { logout(); navigate("/"); };
+  const handleLogout = async () => {
+    await logout();
+    navigate("/login");
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      "Delete your account permanently? This will remove your profile, bookings, and hosted events.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      await api.delete("/users/profile");
+      toast.success("Account deleted.");
+      await logout();
+      navigate("/register");
+    } catch (error) {
+      console.error("Account deletion failed", error);
+      toast.error(error.response?.data?.message || "Unable to delete account.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
+
+  const handleDownloadTicket = async (event) => {
+    try {
+      await downloadTicketPoster(event, user);
+      toast.success("Ticket poster downloaded.");
+    } catch (error) {
+      console.error("Ticket download failed", error);
+      toast.error("Unable to download ticket poster.");
+    }
+  };
 
   // Derived stats
+  const activeBookings = bookings.filter((booking) => booking.status !== "CANCELLED" && booking.event);
+  const confirmedBookings = activeBookings.filter((booking) => booking.status === "CONFIRMED");
+  const joinedEvents = confirmedBookings.map((booking) => ({
+    ...booking.event,
+    bookingId: booking._id,
+    bookingStatus: booking.status,
+    bookedAt: booking.bookedAt || booking.createdAt,
+    tickets: booking.tickets,
+  }));
   const upcoming = joinedEvents.filter((e) => isUpcoming(e.date));
   const past      = joinedEvents.filter((e) => isPast(e.date));
   const cats      = [...new Set(joinedEvents.map((e) => e.category).filter(Boolean))];
+  const roleLabel = accountRole === "super_admin" ? "Super Admin" : accountRole === "organizer" ? "Organizer" : "Attendee";
+  const isOrganizer = accountRole === "organizer" || accountRole === "super_admin";
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
   const Sidebar = ({ mobile = false }) => (
@@ -211,9 +490,9 @@ export default function Dashboard() {
         })}
       </nav>
 
-      {/* User + logout */}
+      {/* User */}
       <div className="px-4 py-5 border-t border-white/8">
-        <div className="flex items-center gap-3 mb-4 px-2">
+        <div className="flex items-center gap-3 px-2 mb-4">
           <div className="h-9 w-9 rounded-xl bg-linear-to-br from-violet-500 to-cyan-500 flex items-center justify-center text-white font-black text-sm shrink-0">
             {user?.name?.[0]?.toUpperCase() || "U"}
           </div>
@@ -309,11 +588,18 @@ export default function Dashboard() {
             <h1 className="text-3xl font-black text-white">My Events</h1>
             <p className="text-zinc-400 text-sm">{joinedEvents.length} events joined</p>
           </div>
-          <Link to="/events">
-            <button className="rounded-2xl bg-linear-to-r from-violet-600 to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 hover:scale-105 transition-transform">
-              + Find Events
-            </button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/events/new">
+              <button className="inline-flex items-center gap-2 rounded-2xl bg-linear-to-r from-violet-600 to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/20 hover:scale-105 transition-transform">
+                <CalendarPlus className="h-4 w-4" /> Create Event
+              </button>
+            </Link>
+            <Link to="/events">
+              <button className="rounded-2xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-zinc-300 hover:text-white hover:border-white/20 transition-all">
+                Find Events
+              </button>
+            </Link>
+          </div>
         </motion.div>
 
         {/* Filter pills */}
@@ -410,15 +696,19 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  <div className="mt-5 flex gap-2">
-                    <Link to={`/events/${event._id}`} className="flex-1">
+                  <div className="mt-5 flex flex-col sm:flex-row gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadTicket(event)}
+                      className="flex-1 rounded-xl bg-linear-to-r from-violet-600 to-cyan-500 py-2.5 text-xs font-bold text-white shadow-lg shadow-violet-500/20 hover:opacity-90 transition-opacity flex items-center justify-center gap-1.5"
+                    >
+                      <Download className="h-3.5 w-3.5" /> Download Poster
+                    </button>
+                    <Link to={`/events/${event._id}`} className="sm:w-36">
                       <button className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:border-white/20 transition-all flex items-center justify-center gap-1.5">
                         <ExternalLink className="h-3.5 w-3.5" /> View Event
                       </button>
                     </Link>
-                    <button className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-zinc-400 hover:text-white hover:border-white/20 transition-all">
-                      <Download className="h-4 w-4" />
-                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -455,21 +745,114 @@ export default function Dashboard() {
     }, {});
     const months = Object.entries(monthlyMap);
     const maxMonth = Math.max(...months.map(([, v]) => v), 1);
+    const salesRows = [...(organizerStats.perEventSales || [])].sort((a, b) => b.ticketsSold - a.ticketsSold);
+    const topEvent = salesRows[0];
 
     return (
       <motion.div variants={stagger} initial="hidden" animate="visible" className="space-y-8">
         <motion.div variants={fadeUp}>
           <h1 className="text-3xl font-black text-white">Stats</h1>
-          <p className="text-zinc-400 text-sm">Your event activity at a glance</p>
+          <p className="text-zinc-400 text-sm">
+            {isOrganizer ? "Ticket sales and attendee activity at a glance" : "Your event activity at a glance"}
+          </p>
         </motion.div>
 
         {/* Summary cards */}
         <motion.div variants={stagger} className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard label="Total Joined"  value={joinedEvents.length} sub="all time"         gradient="from-violet-500/25 to-purple-600/15" icon={Calendar}    />
-          <StatCard label="Upcoming"      value={upcoming.length}     sub="registered"       gradient="from-cyan-500/25 to-blue-600/15"    icon={TrendingUp}  />
-          <StatCard label="Completed"     value={past.length}         sub="events attended"  gradient="from-emerald-500/25 to-teal-600/15" icon={CheckCircle} />
-          <StatCard label="Interests"     value={cats.length}         sub="categories"       gradient="from-orange-500/25 to-amber-600/15" icon={Star}        />
+          {isOrganizer ? (
+            <>
+              <StatCard label="Events Hosted" value={organizerStats.totalEvents || 0} sub="created by you" gradient="from-violet-500/25 to-purple-600/15" icon={Calendar} />
+              <StatCard label="Tickets Sold" value={organizerStats.totalTicketsSold || 0} sub={`${organizerStats.totalBookings || 0} booking${organizerStats.totalBookings === 1 ? "" : "s"}`} gradient="from-cyan-500/25 to-blue-600/15" icon={Ticket} />
+              <StatCard label="Revenue" value={fmtCurrency(organizerStats.totalRevenue || 0)} sub="confirmed sales" gradient="from-emerald-500/25 to-teal-600/15" icon={TrendingUp} />
+              <StatCard label="Top Event" value={topEvent?.ticketsSold || 0} sub={topEvent?.title || "no sales yet"} gradient="from-orange-500/25 to-amber-600/15" icon={Star} />
+            </>
+          ) : (
+            <>
+              <StatCard label="Total Joined"  value={joinedEvents.length} sub="all time"         gradient="from-violet-500/25 to-purple-600/15" icon={Calendar}    />
+              <StatCard label="Upcoming"      value={upcoming.length}     sub="registered"       gradient="from-cyan-500/25 to-blue-600/15"    icon={TrendingUp}  />
+              <StatCard label="Completed"     value={past.length}         sub="events attended"  gradient="from-emerald-500/25 to-teal-600/15" icon={CheckCircle} />
+              <StatCard label="Interests"     value={cats.length}         sub="categories"       gradient="from-orange-500/25 to-amber-600/15" icon={Star}        />
+            </>
+          )}
         </motion.div>
+
+        {isOrganizer && (
+          <motion.div variants={fadeUp} className="rounded-3xl border border-white/10 bg-white/4 p-7 backdrop-blur-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+              <div>
+                <h2 className="text-base font-black text-white">Ticket Sales by Event</h2>
+                <p className="text-xs text-zinc-500">Confirmed bookings, tickets sold, revenue, and capacity usage</p>
+              </div>
+              <Link to="/events/new">
+                <button className="inline-flex items-center gap-2 rounded-xl bg-white/8 border border-white/10 px-4 py-2 text-xs font-semibold text-zinc-300 hover:text-white hover:border-white/20 transition-all">
+                  <CalendarPlus className="h-3.5 w-3.5" /> Create Event
+                </button>
+              </Link>
+            </div>
+
+            {salesRows.length > 0 ? (
+              <div className="space-y-3">
+                {salesRows.map((eventStats) => {
+                  const colors = cat(eventStats.category);
+                  const capacityText = `${eventStats.ticketsSold}/${eventStats.capacity || 0}`;
+
+                  return (
+                    <div key={eventStats.eventId} className="rounded-2xl border border-white/8 bg-white/4 p-4">
+                      <div className="flex flex-col lg:flex-row lg:items-center gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <span className={`text-[10px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-full border ${colors.bg} ${colors.text} ${colors.border}`}>
+                              {eventStats.category || "Event"}
+                            </span>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/8 text-zinc-400">
+                              {fmtDate(eventStats.date)}
+                            </span>
+                          </div>
+                          <h3 className="text-sm font-bold text-white truncate">{eventStats.title}</h3>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:w-[520px]">
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Tickets</p>
+                            <p className="text-sm font-black text-white">{eventStats.ticketsSold}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Bookings</p>
+                            <p className="text-sm font-black text-white">{eventStats.bookings}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Revenue</p>
+                            <p className="text-sm font-black text-white">{fmtCurrency(eventStats.revenue)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Capacity</p>
+                            <p className="text-sm font-black text-white">{capacityText}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 h-2 w-full rounded-full bg-white/8 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(eventStats.sellThroughRate || 0, 100)}%` }}
+                          transition={{ duration: 0.6, ease: "easeOut" }}
+                          className="h-full rounded-full bg-linear-to-r from-violet-600 to-cyan-500"
+                        />
+                      </div>
+                      <p className="mt-2 text-[11px] text-zinc-500">{eventStats.sellThroughRate || 0}% sold</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-[20px] border border-white/8 bg-white/4 p-10 text-center">
+                <Ticket className="h-10 w-10 text-zinc-700 mx-auto mb-3" />
+                <p className="text-zinc-300 font-semibold mb-1">No ticket sales yet</p>
+                <p className="text-zinc-500 text-sm">Create an event or wait for attendees to book tickets.</p>
+              </div>
+            )}
+          </motion.div>
+        )}
 
         {/* Category breakdown */}
         <motion.div variants={fadeUp} className="rounded-3xl border border-white/10 bg-white/4 p-7 backdrop-blur-xl">
@@ -550,7 +933,7 @@ export default function Dashboard() {
           <h2 className="text-xl font-black text-white">{user?.name}</h2>
           <p className="text-zinc-400 text-sm">{user?.email}</p>
           <span className="mt-2 inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
-            Attendee
+            {roleLabel}
           </span>
         </div>
       </motion.div>
@@ -608,13 +991,14 @@ export default function Dashboard() {
 
       {/* Danger zone */}
       <motion.div variants={fadeUp} className="rounded-3xl border border-rose-500/20 bg-rose-500/5 p-7">
-        <h3 className="text-base font-black text-white mb-1">Danger Zone</h3>
-        <p className="text-zinc-400 text-sm mb-5">These actions are irreversible. Proceed with caution.</p>
+        <h3 className="text-base font-black text-white mb-1">Delete Account</h3>
+        <p className="text-zinc-400 text-sm mb-5">Permanently remove your profile, bookings, and hosted events.</p>
         <button
-          onClick={handleLogout}
-          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-5 py-2.5 text-sm font-semibold text-rose-400 hover:bg-rose-500/20 transition-all flex items-center gap-2"
+          onClick={handleDeleteAccount}
+          disabled={isDeletingAccount}
+          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-5 py-2.5 text-sm font-semibold text-rose-400 hover:bg-rose-500/20 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <LogOut className="h-4 w-4" /> Sign Out of Account
+          <Trash2 className="h-4 w-4" /> {isDeletingAccount ? "Deleting..." : "Delete Account"}
         </button>
       </motion.div>
     </motion.div>
@@ -678,6 +1062,11 @@ export default function Dashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link to="/events/new">
+              <button className="flex items-center gap-2 h-9 px-4 rounded-xl bg-linear-to-r from-violet-600 to-cyan-500 text-xs font-semibold text-white shadow-lg shadow-violet-500/20 hover:opacity-90 transition-opacity">
+                <CalendarPlus className="h-3.5 w-3.5" /> Create Event
+              </button>
+            </Link>
             <Link to="/events">
               <button className="hidden sm:flex items-center gap-2 h-9 px-4 rounded-xl border border-white/10 bg-white/5 text-xs font-semibold text-zinc-300 hover:text-white hover:border-white/20 transition-all">
                 <Search className="h-3.5 w-3.5" /> Browse Events

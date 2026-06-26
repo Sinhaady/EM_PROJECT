@@ -96,7 +96,13 @@ if (
         try {
           const email = profile.emails?.[0]?.value;
           const googleId = profile.id;
-          const displayName = profile.displayName;
+          const displayName = profile.displayName || email?.split("@")[0];
+
+          if (!email) {
+            return done(null, false, {
+              message: "Google account did not provide an email address",
+            });
+          }
 
           // already linked google account
           let user = await User.findOne({ googleId });

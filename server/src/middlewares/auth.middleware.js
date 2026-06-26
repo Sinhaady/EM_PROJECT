@@ -1,4 +1,5 @@
 import passport from "passport";
+import { getEffectiveRole } from "../../config/roles.js";
 
 export const verifyToken = (req, res, next) => {
   passport.authenticate(
@@ -23,7 +24,7 @@ export const verifyToken = (req, res, next) => {
         id: user._id.toString(),
         name: user.name,          // Fixed from username
         email: user.email,
-        role: user.role,          // Crucial for your upcoming role.middleware.js
+        role: getEffectiveRole(user),
         authProvider: user.authProvider,
       };
 

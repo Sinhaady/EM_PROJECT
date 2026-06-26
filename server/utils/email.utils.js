@@ -3,112 +3,195 @@ import dotenv from "dotenv";
 
 dotenv.config({ quiet: true });
 
-// ─── Base Email Transporter ──────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: process.env.SMTP_PORT,
-  secure: process.env.SMTP_PORT === "465", 
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+const fromAddress =
+  process.env.EMAIL_FROM ||
+  (process.env.EMAIL_USER ? `"Ventro Events" <${process.env.EMAIL_USER}>` : undefined);
 
-// Internal helper function to send the actual email
-const sendEmail = async (options) => {
+const isSmtpConfigured = () =>
+  Boolean(
+    (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) ||
+      (process.env.EMAIL_USER && process.env.EMAIL_PASS),
+  );
+
+const createTransporter = () => {
+  if (process.env.SMTP_HOST) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: process.env.SMTP_PORT === "465",
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  return nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+};
+
+const transporter = isSmtpConfigured() ? createTransporter() : null;
+
+const escapeHtml = (value = "") =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+const formatDateTime = (date) =>
+  new Date(date).toLocaleString("en-IN", {
+    dateStyle: "full",
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata",
+  });
+
+const sendEmail = async ({ to, subject, html }) => {
+  if (!transporter || !fromAddress) {
+    console.warn("Email skipped: SMTP/EMAIL credentials are not configured.");
+    return false;
+  }
+
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_FROM,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${options.to}: ${info.messageId}`);
+    const info = await transporter.sendMail({
+      from: fromAddress,
+      to,
+      subject,
+      html,
+    });
+    console.log(`Email sent to ${to}: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error("Email sending failed:", error);
+    console.error("Email sending failed:", error.message);
     return false;
   }
 };
 
-// ─── 1. Welcome Email ────────────────────────────────────────────────────────
 export const sendWelcomeEmail = async (user) => {
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Welcome to EventM, ${user.name}!</h2>
-      <p>We are thrilled to have you on board.</p>
-      <p>You can now browse events, book tickets, and manage your schedule all in one place.</p>
-      <br>
-      <p>Cheers,<br>The EventM Team</p>
+      <h2>Welcome to Ventro, ${escapeHtml(user.name)}!</h2>
+      <p>You can now browse events, book tickets, and manage your schedule in one place.</p>
+      <p>Cheers,<br>The Ventro Team</p>
     </div>
   `;
-  return sendEmail({ to: user.email, subject: "Welcome to EventM!", html });
+
+  return sendEmail({ to: user.email, subject: "Welcome to Ventro!", html });
 };
 
-// ─── 2. Booking Confirmation ─────────────────────────────────────────────────
 export const sendBookingConfirmation = async (user, event, booking) => {
   const html = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Ticket Confirmed! 🎉</h2>
-      <p>Hi ${user.name}, your booking for <strong>${event.title}</strong> is confirmed.</p>
-      <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
-        <p><strong>Date:</strong> ${new Date(event.date).toDateString()}</p>
-        <p><strong>Location:</strong> ${event.location}</p>
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+      <h2>Your booking is confirmed</h2>
+      <p>Hi ${escapeHtml(user.name)}, your booking for <strong>${escapeHtml(event.title)}</strong> is confirmed.</p>
+      <div style="background: #f4f4f5; padding: 16px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>Date:</strong> ${formatDateTime(event.date)}</p>
+        <p><strong>Location:</strong> ${escapeHtml(event.location || "Online / TBA")}</p>
         <p><strong>Tickets:</strong> ${booking.tickets}</p>
-        <p><strong>Order ID:</strong> ${booking._id}</p>
+        <p><strong>Booking ID:</strong> ${booking._id}</p>
       </div>
-      <p>See you there!</p>
+      <p>Keep this email handy. We will also remind you one day before the event.</p>
     </div>
   `;
-  return sendEmail({ to: user.email, subject: `Booking Confirmed: ${event.title}`, html });
+
+  return sendEmail({
+    to: user.email,
+    subject: `Booking confirmed: ${event.title}`,
+    html,
+  });
 };
 
-// ─── 3. Cancellation Email ───────────────────────────────────────────────────
+export const sendEventReminderEmail = async (user, event, booking) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+      <h2>Your event is tomorrow</h2>
+      <p>Hi ${escapeHtml(user.name)}, this is a reminder for <strong>${escapeHtml(event.title)}</strong>.</p>
+      <div style="background: #eef2ff; padding: 16px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>Date:</strong> ${formatDateTime(event.date)}</p>
+        <p><strong>Location:</strong> ${escapeHtml(event.location || "Online / TBA")}</p>
+        <p><strong>Tickets:</strong> ${booking.tickets}</p>
+      </div>
+      <p>See you there.</p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: user.email,
+    subject: `Reminder: ${event.title} is tomorrow`,
+    html,
+  });
+};
+
 export const sendCancellationEmail = async (user, event, booking, amountRefunded = 0) => {
-  const refundText = amountRefunded > 0 
-    ? `<p>A refund of <strong>₹${amountRefunded}</strong> has been initiated and will reflect in your account within 5-7 business days.</p>`
-    : `<p>Since this was a free event, no refund is required.</p>`;
+  const refundText =
+    amountRefunded > 0
+      ? `<p>A refund of <strong>Rs. ${amountRefunded}</strong> has been initiated.</p>`
+      : "<p>No refund is required for this booking.</p>";
 
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Booking Cancelled</h2>
-      <p>Hi ${user.name},</p>
-      <p>Your booking for <strong>${event.title}</strong> has been successfully cancelled.</p>
+      <h2>Booking cancelled</h2>
+      <p>Hi ${escapeHtml(user.name)},</p>
+      <p>Your booking for <strong>${escapeHtml(event.title)}</strong> has been cancelled.</p>
       ${refundText}
-      <p>We hope to see you at another event soon.</p>
     </div>
   `;
-  return sendEmail({ to: user.email, subject: `Booking Cancelled: ${event.title}`, html });
+
+  return sendEmail({ to: user.email, subject: `Booking cancelled: ${event.title}`, html });
 };
 
-// ─── 4. Password Reset Email ─────────────────────────────────────────────────
+export const sendEventCancelledEmail = async (user, event, booking, reason = "The event has been cancelled.") => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; padding: 20px; color: #111827;">
+      <h2>Event cancelled</h2>
+      <p>Hi ${escapeHtml(user.name)},</p>
+      <p><strong>${escapeHtml(event.title)}</strong> has been cancelled.</p>
+      <div style="background: #fff1f2; padding: 16px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>Date:</strong> ${formatDateTime(event.date)}</p>
+        <p><strong>Location:</strong> ${escapeHtml(event.location || "Online / TBA")}</p>
+        <p><strong>Tickets:</strong> ${booking.tickets}</p>
+        <p><strong>Reason:</strong> ${escapeHtml(reason)}</p>
+      </div>
+      <p>Your booking has been cancelled automatically.</p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: user.email,
+    subject: `Event cancelled: ${event.title}`,
+    html,
+  });
+};
+
 export const sendPasswordResetEmail = async (user, resetToken) => {
-  // Assuming your frontend runs on this URL
   const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
   const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
-
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Password Reset Request</h2>
-      <p>You requested a password reset. Please click the button below to set a new password.</p>
-      <a href="${resetUrl}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">Reset Password</a>
-      <p style="margin-top: 20px; font-size: 12px; color: #777;">This link will expire in 15 minutes. If you did not request this, please ignore this email.</p>
+      <h2>Password reset request</h2>
+      <p>Click the button below to set a new password.</p>
+      <a href="${resetUrl}" style="background: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px;">Reset password</a>
+      <p style="font-size: 12px; color: #777;">This link expires in 15 minutes.</p>
     </div>
   `;
-  return sendEmail({ to: user.email, subject: "EventM Password Reset", html });
+
+  return sendEmail({ to: user.email, subject: "Ventro password reset", html });
 };
 
-// ─── 5. Organizer Alert ──────────────────────────────────────────────────────
 export const sendOrganizerAlert = async (organizer, event, booking) => {
   const html = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>New Ticket Sold! 🎟️</h2>
-      <p>Hi ${organizer.name},</p>
-      <p>You just sold <strong>${booking.tickets}</strong> ticket(s) for <strong>${event.title}</strong>.</p>
-      <p>Log in to your dashboard to view your updated revenue and attendee list.</p>
+      <h2>New ticket sold</h2>
+      <p>Hi ${escapeHtml(organizer.name)},</p>
+      <p>You sold <strong>${booking.tickets}</strong> ticket(s) for <strong>${escapeHtml(event.title)}</strong>.</p>
     </div>
   `;
-  return sendEmail({ to: organizer.email, subject: `New Booking for ${event.title}`, html });
+
+  return sendEmail({ to: organizer.email, subject: `New booking for ${event.title}`, html });
 };

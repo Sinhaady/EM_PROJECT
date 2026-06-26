@@ -11,6 +11,7 @@ import eventRoutes from './src/route/event.route.js';
 import bookingRoutes from './src/route/booking.route.js';
 import transactionRoutes from './src/route/transaction.route.js';
 import paymentRoutes from './src/route/payment.route.js';
+import { startEventReminderScheduler } from './src/services/eventReminder.service.js';
 
 
 dotenv.config({ quiet: true });
@@ -26,7 +27,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(passport.initialize());
 
-connectDB();
+connectDB().then(() => {
+  startEventReminderScheduler();
+});
 
 app.get("/", (req, res) => {
   res.status(200).json({ success: true, message: "API is running..." });
@@ -49,9 +52,14 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(err.status || 500).json({
+  const isUploadError =
+    err.name === "MulterError" ||
+    err.message?.includes("Only JPG, PNG, and WebP") ||
+    err.message?.includes("File too large");
+
+  res.status(err.status || (isUploadError ? 400 : 500)).json({
     success: false,
-    message: err.message || "Server error",
+    message: isUploadError ? err.message : err.message || "Server error",
   });
 });
 

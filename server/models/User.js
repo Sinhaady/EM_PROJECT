@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
+import { ROLES, USER_ROLE_VALUES, isSuperAdminEmail } from "../config/roles.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -22,8 +23,24 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["attendee", "organizer","admin"],
-      default: "attendee",
+      enum: USER_ROLE_VALUES,
+      default: ROLES.ATTENDEE,
+    },
+    bio: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: [500, "Bio cannot exceed 500 characters"],
+    },
+    phone: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    avatar: {
+      type: String,
+      default: "",
+      trim: true,
     },
     is_verified: {
       type: Boolean,
@@ -42,6 +59,14 @@ const userSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+userSchema.pre("validate", function () {
+  if (isSuperAdminEmail(this.email)) {
+    this.role = ROLES.SUPER_ADMIN;
+  } else if (this.role === ROLES.SUPER_ADMIN) {
+    this.invalidate("role", "Only the fixed super admin email can use the super_admin role.");
+  }
+});
 
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) {

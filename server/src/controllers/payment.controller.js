@@ -30,7 +30,7 @@ export const getEventTransactions = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
+    if (event.createdBy.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({ success: false, message: "Not authorized to view financial data for this event" });
     }
 

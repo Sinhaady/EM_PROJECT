@@ -133,6 +133,47 @@ const EventDetail = () => {
     }
   };
 
+  const handleShare = async () => {
+    if (!event) {
+      return;
+    }
+
+    const shareUrl = `${window.location.origin}/events/${event._id || id}`;
+    const shareData = {
+      title: event.title,
+      text: `Check out ${event.title} on Ventro`,
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success('Event link copied to clipboard.');
+        return;
+      }
+
+      const textArea = document.createElement('textarea');
+      textArea.value = shareUrl;
+      textArea.setAttribute('readonly', '');
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      toast.success('Event link copied to clipboard.');
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        toast.error('Unable to share this event. Please try again.');
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center text-slate-300">
@@ -154,7 +195,10 @@ const EventDetail = () => {
 
   const availableSeats = Math.max((event.capacity || 0) - (event.registeredCount || 0), 0);
   const organizerName = event.createdBy?.name || event.organizer || 'Event organizer';
-  const canBook = availableSeats > 0 && ticketCount <= availableSeats && !isBooking;
+  const eventDate = new Date(event.date);
+  const isPastEvent = !Number.isNaN(eventDate.getTime()) && eventDate < new Date();
+  const isCancelledEvent = event.status === 'CANCELLED';
+  const canBook = !isCancelledEvent && !isPastEvent && availableSeats > 0 && ticketCount <= availableSeats && !isBooking;
 
   return (
     <div className="bg-[#090b12] min-h-screen pb-12">
@@ -239,7 +283,11 @@ const EventDetail = () => {
               </div>
               <div className="flex items-center justify-between text-slate-300">
                 <span className="flex items-center"><Users className="w-4 h-4 mr-2" /> Availability</span>
-                {availableSeats > 0 ? (
+                {isCancelledEvent ? (
+                  <span className="font-semibold text-red-300">Event cancelled</span>
+                ) : isPastEvent ? (
+                  <span className="font-semibold text-amber-300">Event ended</span>
+                ) : availableSeats > 0 ? (
                   <span className="font-semibold text-green-400">{availableSeats} seats left</span>
                 ) : (
                   <span className="font-semibold text-red-300">Sold Out</span>
@@ -256,7 +304,7 @@ const EventDetail = () => {
                   max={availableSeats || 1}
                   value={ticketCount}
                   onChange={(event) => setTicketCount(Number(event.target.value))}
-                  disabled={availableSeats <= 0}
+                  disabled={isCancelledEvent || isPastEvent || availableSeats <= 0}
                   className="w-full rounded-lg border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-400/20 disabled:bg-slate-800 disabled:text-slate-500"
                 />
               </div>
@@ -271,11 +319,23 @@ const EventDetail = () => {
               }`}
               disabled={!canBook}
             >
-              {availableSeats <= 0 ? 'Event Sold Out' : isBooking ? 'Booking...' : 'Book Tickets Now'}
+              {isCancelledEvent
+                ? 'Event Cancelled'
+                : isPastEvent
+                  ? 'Event Ended'
+                  : availableSeats <= 0
+                  ? 'Event Sold Out'
+                  : isBooking
+                    ? 'Booking...'
+                    : 'Book Tickets Now'}
             </button>
 
             <div className="mt-4 flex justify-center">
-              <button className="flex items-center text-slate-400 hover:text-violet-300 transition-colors text-sm font-medium">
+              <button
+                type="button"
+                onClick={handleShare}
+                className="flex items-center text-slate-400 hover:text-violet-300 transition-colors text-sm font-medium"
+              >
                 <Share2 className="w-4 h-4 mr-2" /> Share this event
               </button>
             </div>

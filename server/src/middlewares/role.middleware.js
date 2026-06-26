@@ -29,13 +29,14 @@ const requireRole = (...roles) => {
 
 // ─── Pre-configured Role Guards ───────────────────────────────────────────────
 
-// Only admins can access
-export const requireAdmin = requireRole("admin");
+// Only the fixed super admin can access platform administration.
+export const requireAdmin = requireRole("super_admin");
+export const requireSuperAdmin = requireAdmin;
 
-// Organizers and admins can access (e.g., creating an event)
-export const requireOrganizer = requireRole("organizer", "admin");
+// Organizers and the fixed super admin can access organizer-level tools.
+export const requireOrganizer = requireRole("organizer", "super_admin");
 
 // Anyone who is logged in can access (e.g., booking a ticket)
-export const requireAttendee = requireRole("attendee", "organizer", "admin");
+export const requireAttendee = requireRole("attendee", "organizer", "admin", "super_admin");
 
 export default requireRole;

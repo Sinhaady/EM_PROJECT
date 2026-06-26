@@ -1,5 +1,5 @@
 import { CalendarPlus, ImageUp } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -17,16 +17,40 @@ const initialFormData = {
 };
 
 const CreateEvent = () => {
-  const { user } = useAuth();
+  const { refreshUser, user } = useAuth();
   const navigate = useNavigate();
   const [formData, setFormData] = useState(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const userRole = user?.role?.toLowerCase();
+
+  useEffect(() => {
+    if (user && refreshUser) {
+      refreshUser().catch((error) => {
+        console.error('Unable to refresh user before creating event', error);
+      });
+    }
+  }, [refreshUser, user?._id]);
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (user.role !== 'organizer' && user.role !== 'admin') {
+  const handleBecomeOrganizer = async () => {
+    setIsUpgrading(true);
+
+    try {
+      await api.put('/users/profile', { role: 'organizer' });
+      await refreshUser();
+      toast.success('Your account is now an organizer account.');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Unable to update your account role.');
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
+
+  if (userRole !== 'organizer' && userRole !== 'super_admin') {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <div className="bg-slate-900 border border-white/10 rounded-lg p-8">
@@ -34,6 +58,14 @@ const CreateEvent = () => {
           <p className="text-slate-400 mt-3">
             Your account is currently an attendee account. Register or update your account as an organizer to create events.
           </p>
+          <button
+            type="button"
+            onClick={handleBecomeOrganizer}
+            disabled={isUpgrading}
+            className="mt-6 inline-flex items-center justify-center rounded-lg bg-violet-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isUpgrading ? 'Updating account...' : 'Switch to Organizer'}
+          </button>
         </div>
       </div>
     );
@@ -69,10 +101,16 @@ const CreateEvent = () => {
 
     try {
       const response = await api.post('/events', payload);
-      toast.success('Event created successfully!');
-      navigate(`/events/${response.data.event._id}`);
+      toast.success('Event submitted for admin approval.');
+      navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Unable to create event.');
+      const message = error.response?.data?.message || 'Unable to create event.';
+
+      if (error.response?.status === 403) {
+        await refreshUser?.().catch(() => null);
+      }
+
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }

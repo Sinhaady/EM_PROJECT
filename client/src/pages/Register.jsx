@@ -37,7 +37,7 @@ const fields = [
 ];
 
 const Register = () => {
-  const { register, user } = useAuth();
+  const { loginWithGoogle, register, user } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -82,7 +82,7 @@ const Register = () => {
       toast.error(errorMsg);
     } else {
       toast.success("Registration successful!");
-      navigate("/");
+      navigate(formData.role === "organizer" ? "/events/new" : "/");
     }
 
     setIsLoading(false);
@@ -252,9 +252,30 @@ const Register = () => {
                   disabled={isLoading}
                   className="mt-3 w-full rounded-2xl bg-linear-to-r from-violet-600 via-blue-500 to-cyan-500 py-4 text-sm font-bold tracking-wide text-white shadow-2xl shadow-violet-500/20 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {isLoading ? "Creating Account..." : "Create Your Account"}
+                  {isLoading
+                    ? "Creating Account..."
+                    : formData.role === "organizer"
+                      ? "Create Organizer Account"
+                      : "Create Your Account"}
                 </motion.button>
               </form>
+
+              <div className="my-6 flex items-center gap-3">
+                <div className="h-px flex-1 bg-white/10" />
+                <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">or</span>
+                <div className="h-px flex-1 bg-white/10" />
+              </div>
+
+              <button
+                type="button"
+                onClick={loginWithGoogle}
+                className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 py-4 text-sm font-semibold text-white backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/10"
+              >
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-sm font-black text-blue-600">
+                  G
+                </span>
+                Sign up with Google
+              </button>
 
               <p className="mt-8 text-center text-sm text-zinc-500">
                 Already have an account?{" "}

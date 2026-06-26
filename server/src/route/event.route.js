@@ -8,9 +8,11 @@ import {
   updateEvent,
   deleteEvent,
   getUniqueCategories,
+  getModerationEvents,
+  moderateEvent,
 } from "../controllers/event.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
-import { requireOrganizer } from "../middlewares/role.middleware.js";
+import { requireOrganizer, requireSuperAdmin } from "../middlewares/role.middleware.js";
 import { uploadEventImage } from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
@@ -19,6 +21,7 @@ const router = express.Router();
 
 router.get("/", getAllEvents);
 router.get("/categories/unique", getUniqueCategories);
+router.get("/moderation", verifyToken, requireSuperAdmin, getModerationEvents);
 router.get("/:id", getEventById);
 
 // ─── Protected Routes (Managing Events) ──────────────────────────────────────
@@ -44,6 +47,13 @@ router.delete(
   verifyToken, 
   requireOrganizer, 
   deleteEvent
+);
+
+router.patch(
+  "/:id/moderation",
+  verifyToken,
+  requireSuperAdmin,
+  moderateEvent
 );
 
 export default router;

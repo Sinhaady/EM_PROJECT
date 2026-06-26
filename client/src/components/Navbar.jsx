@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { LogOut, User, Menu, X } from "lucide-react";
+import { CalendarPlus, LogOut, Menu, X } from "lucide-react";
 import Features from "../pages/Features";
 import About from "../pages/About";
 
@@ -10,6 +10,8 @@ const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const isDashboard = location.pathname.startsWith("/dashboard");
+  const isSuperAdmin = user?.role === 'super_admin' && user?.email?.toLowerCase() === 'adityasinha296@gmail.com';
 
   const handleLogout = async () => {
     await logout();
@@ -62,15 +64,26 @@ const Navbar = () => {
               <Link to="/dashboard" className="text-white/60 hover:text-white transition-colors text-sm font-medium">
                 Dashboard
               </Link>
+              {isSuperAdmin && (
+                <Link to="/super-admin" className="text-cyan-300 hover:text-cyan-200 transition-colors text-sm font-bold">
+                  Admin
+                </Link>
+              )}
+              <Link to="/events/new" className="flex items-center gap-2 bg-linear-to-r from-[#8155ff] to-[#6035f5] text-white px-4 py-2 rounded-full font-medium hover:opacity-90 transition-opacity shadow-lg shadow-purple-500/20 text-[13px]">
+                <CalendarPlus size={16} />
+                Create Event
+              </Link>
               <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
                 <div className="w-6 h-6 rounded-full bg-linear-to-br from-purple-500 to-[#8155ff] text-white flex items-center justify-center font-bold text-xs shadow-md">
                   {user.name ? user.name.charAt(0) : 'U'}
                 </div>
                 <span className="text-sm font-medium text-white/90">{user.name || user.email?.split('@')[0]}</span>
               </div>
-              <button onClick={handleLogout} className="text-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-sm font-medium h-9 px-3 border border-transparent hover:border-red-500/30 hover:bg-white/5 rounded-full">
-                <LogOut size={16} />
-              </button>
+              {!isDashboard && (
+                <button onClick={handleLogout} className="text-white/40 hover:text-red-400 transition-colors flex items-center gap-2 text-sm font-medium h-9 px-3 border border-transparent hover:border-red-500/30 hover:bg-white/5 rounded-full">
+                  <LogOut size={16} />
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -115,9 +128,19 @@ const Navbar = () => {
               <Link to="/dashboard" onClick={() => setIsOpen(false)} className="text-white/80 hover:text-white font-medium text-sm py-2">
                 Dashboard
               </Link>
-              <button onClick={() => { handleLogout(); setIsOpen(false); }} className="text-left text-red-400 font-medium text-sm py-2 flex items-center gap-2">
-                <LogOut size={16} /> Logout
-              </button>
+              {isSuperAdmin && (
+                <Link to="/super-admin" onClick={() => setIsOpen(false)} className="text-cyan-300 hover:text-cyan-200 font-bold text-sm py-2">
+                  Admin
+                </Link>
+              )}
+              <Link to="/events/new" onClick={() => setIsOpen(false)} className="flex items-center gap-2 text-white font-medium text-sm py-2">
+                <CalendarPlus size={16} /> Create Event
+              </Link>
+              {!isDashboard && (
+                <button onClick={() => { handleLogout(); setIsOpen(false); }} className="text-left text-red-400 font-medium text-sm py-2 flex items-center gap-2">
+                  <LogOut size={16} /> Logout
+                </button>
+              )}
             </>
           ) : (
             <div className="flex flex-col gap-3 mt-2">

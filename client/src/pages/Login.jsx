@@ -13,7 +13,7 @@ const eventImages = [
 ];
 
 const Login = () => {
-  const { login, user } = useAuth();
+  const { login, loginWithGoogle, user } = useAuth();
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -181,6 +181,23 @@ const Login = () => {
               <ArrowRight className="h-4 w-4" />
             </motion.button>
           </form>
+
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-white/10" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-zinc-600">or</span>
+            <div className="h-px flex-1 bg-white/10" />
+          </div>
+
+          <button
+            type="button"
+            onClick={loginWithGoogle}
+            className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 py-4 font-semibold text-white backdrop-blur-xl transition-all hover:border-white/20 hover:bg-white/10"
+          >
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-sm font-black text-blue-600">
+              G
+            </span>
+            Sign in with Google
+          </button>
 
           <p className="mt-10 text-center text-sm text-zinc-500">
             Don't have an account?{' '}

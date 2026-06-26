@@ -261,15 +261,15 @@ const Home = () => {
                 </motion.button>
               </Link>
 
-              <a href="#how-it-works">
+              <Link to={createEventPath}>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.97 }}
                   className="rounded-2xl border border-white/10 bg-white/5 px-8 py-4 font-semibold text-white backdrop-blur-xl transition-all hover:border-cyan-400/40 hover:bg-cyan-500/10 w-full sm:w-auto"
                 >
-                  How It Works
+                  Host Event
                 </motion.button>
-              </a>
+              </Link>
             </motion.div>
           </motion.div>
 

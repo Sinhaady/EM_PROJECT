@@ -2,6 +2,21 @@ import Event from "../../models/Event.js";
 import User from "../../models/User.js"; 
 import { sendEventConfirmationEmail } from "./emailService.js";
 
+const PUBLIC_EVENT_STATUS = "PUBLISHED";
+const MODERATION_STATUSES = ["PENDING", "PUBLISHED", "REJECTED"];
+const ORGANIZER_UPDATE_BLOCKLIST = new Set(["status", "createdBy", "registeredCount", "image"]);
+
+const createImagePayload = (file) => ({
+  url: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
+  publicId: `local-event-${Date.now()}-${file.originalname}`,
+});
+
+const buildOrganizerUpdate = (body) => {
+  return Object.fromEntries(
+    Object.entries(body).filter(([key]) => !ORGANIZER_UPDATE_BLOCKLIST.has(key)),
+  );
+};
+
 // ─── @route  POST /api/events ────────────────────────────────────────────────
 // ─── @access Private (Organizers & Admins)
 export const createEvent = async (req, res) => {
@@ -9,14 +24,16 @@ export const createEvent = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ success: false, message: "Event image is required" });
     }
+
     const eventData = {
       ...req.body,
+      price: Number(req.body.price),
+      capacity: Number(req.body.capacity),
       createdBy: req.user.id,
-      image: {
-        url: req.file.path,       
-        publicId: req.file.filename 
-      }
+      image: createImagePayload(req.file),
+      status: "PENDING",
     };
+
     const event = await Event.create(eventData);
     res.status(201).json({ success: true, event });
 
@@ -28,7 +45,7 @@ export const createEvent = async (req, res) => {
       });
     }
     console.error("Create Event Error:", error.message);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, message: error.message || "Server error" });
   }
 };
 
@@ -36,11 +53,10 @@ export const createEvent = async (req, res) => {
 // ─── @access Public
 export const getAllEvents = async (req, res) => {
   try {
-    const { category, status, type } = req.query;
-    let query = {};
+    const { category, type } = req.query;
+    let query = { status: PUBLIC_EVENT_STATUS };
     
     if (category) query.category = category;
-    if (status) query.status = status;
     if (type) query.type = type;
 
     const events = await Event.find(query)
@@ -80,6 +96,10 @@ export const getEventById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
+    if (event.status !== PUBLIC_EVENT_STATUS) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
     res.status(200).json({ success: true, event });
   } catch (error) {
     console.error("Get Event By ID Error:", error.message);
@@ -97,11 +117,11 @@ export const updateEvent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
+    if (event.createdBy.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({ success: false, message: "You are not authorized to edit this event" });
     }
 
-    event = await Event.findByIdAndUpdate(req.params.id, req.body, {
+    event = await Event.findByIdAndUpdate(req.params.id, buildOrganizerUpdate(req.body), {
       new: true,
       runValidators: true,
     });
@@ -123,7 +143,7 @@ export const deleteEvent = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== "admin") {
+    if (event.createdBy.toString() !== req.user.id && req.user.role !== "super_admin") {
       return res.status(403).json({ success: false, message: "You are not authorized to delete this event" });
     }
 
@@ -176,5 +196,60 @@ export const joinEvent = async (req, res) => {
   } catch (err) {
     console.error("Join Event Error:", err.message);
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @route  GET /api/events/moderation
+// @access Private (Fixed Super Admin)
+export const getModerationEvents = async (req, res) => {
+  try {
+    const { status = "PENDING" } = req.query;
+
+    if (!MODERATION_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid moderation status" });
+    }
+
+    const events = await Event.find({ status })
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email");
+
+    res.status(200).json({ success: true, count: events.length, events });
+  } catch (error) {
+    console.error("Get Moderation Events Error:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// @route  PATCH /api/events/:id/moderation
+// @access Private (Fixed Super Admin)
+export const moderateEvent = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    if (!["PUBLISHED", "REJECTED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Moderation status must be PUBLISHED or REJECTED",
+      });
+    }
+
+    const event = await Event.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true, runValidators: true },
+    ).populate("createdBy", "name email");
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: status === "PUBLISHED" ? "Event approved" : "Event rejected",
+      event,
+    });
+  } catch (error) {
+    console.error("Moderate Event Error:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

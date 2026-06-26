@@ -2,13 +2,18 @@ import jwt from "jsonwebtoken";
 import passport from "passport";
 import dotenv from "dotenv";
 import User from "../../models/User.js";
+import { PUBLIC_ASSIGNABLE_ROLES, ROLES, isSuperAdminEmail, toSafeUser } from "../../config/roles.js";
 
 dotenv.config({ quiet: true });
 
 const jwtSecret =
   process.env.JWT_SECRET ||
   (process.env.NODE_ENV === "production" ? undefined : "eventm-development-jwt-secret");
-const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
+const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:5173";
+const isGoogleOAuthConfigured =
+  Boolean(process.env.GOOGLE_CLIENT_ID) &&
+  Boolean(process.env.GOOGLE_CLIENT_SECRET) &&
+  Boolean(process.env.GOOGLE_CALLBACK_URL);
 
 /// ─── Helper: sign JWT and send as httpOnly cookie ─────────────────────────────
 export const sendTokenResponse = (user, statusCode, res) => {
@@ -27,17 +32,22 @@ export const sendTokenResponse = (user, statusCode, res) => {
   };
 
   res.cookie("eventM_token", token, cookieOptions);
-  user.password = undefined;
+  const safeUser = toSafeUser(user);
   
   // ADD THE TOKEN HERE 👇
-  res.status(statusCode).json({ success: true, token, user }); 
+  res.status(statusCode).json({ success: true, token, user: safeUser }); 
 };
 
 // ─── @route  POST /api/auth/register ─────────────────────────────────────────
 // ─── @access Public
 export const register = async (req, res) => {
   try {
-    const { name, email, password ,role} = req.body;
+    const { name, email, password, role } = req.body;
+    const selectedRole = isSuperAdminEmail(email)
+      ? ROLES.SUPER_ADMIN
+      : PUBLIC_ASSIGNABLE_ROLES.includes(role)
+        ? role
+        : ROLES.ATTENDEE;
 
     if (!name || !email || !password) {
       return res.status(400).json({
@@ -47,20 +57,26 @@ export const register = async (req, res) => {
     }
 
     // Only checking email uniqueness, as multiple users can have the same display name
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ 
+      $or:[
+        {email},
+        {name}
+      ]
+     });
 
     if (existingUser) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         message: "Email is already taken",
       });
     }
 
+    
     const user = await User.create({
       name,
       email,
       password,
-      role,
+      role: selectedRole,
       authProvider: "local",
     });
 
@@ -92,14 +108,24 @@ export const login = (req, res, next) => {
 
 // ─── @route  GET /api/auth/google ────────────────────────────────────────────
 // ─── @access Public — redirects to Google consent screen
-export const googleAuth = passport.authenticate("google", {
-  scope: ["profile", "email"],
-  session: false,
-});
+export const googleAuth = (req, res, next) => {
+  if (!isGoogleOAuthConfigured) {
+    return res.redirect(`${clientUrl}/login?error=google_not_configured`);
+  }
+
+  return passport.authenticate("google", {
+    scope: ["profile", "email"],
+    session: false,
+  })(req, res, next);
+};
 
 // ─── @route  GET /api/auth/google/callback ───────────────────────────────────
 // ─── @access Public — Google redirects here after user grants permission
 export const googleCallback = (req, res, next) => {
+  if (!isGoogleOAuthConfigured) {
+    return res.redirect(`${clientUrl}/login?error=google_not_configured`);
+  }
+
   passport.authenticate("google", { session: false }, (err, user) => {
     if (err || !user) {
       return res.redirect(
@@ -120,8 +146,10 @@ export const googleCallback = (req, res, next) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // redirect to frontend dashboard after successful Google login
-    res.redirect(`${clientUrl}/dashboard`);
+    const redirectUrl = new URL("/auth/google/callback", clientUrl);
+    redirectUrl.searchParams.set("token", token);
+
+    res.redirect(redirectUrl.toString());
   })(req, res, next);
 };
 
@@ -151,7 +179,7 @@ export const getMe = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    res.status(200).json({ success: true, user });
+    res.status(200).json({ success: true, user: toSafeUser(user) });
   } catch (error) {
     console.error("GetMe error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
