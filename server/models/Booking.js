@@ -35,6 +35,8 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ user: 1, event: 1, status: 1 }, { unique: true });
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ event: 1, status: 1 });
 
 const Booking = mongoose.model("Booking", bookingSchema);
 export default Booking;

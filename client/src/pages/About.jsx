@@ -19,7 +19,7 @@ const TEAM = [
   {
     name: "Aditya",
     role: "Founder & Full-Stack Engineer",
-    bio: "Built FUNDO from scratch — backend, frontend, and everything in between. Loves clean code and meaningful products.",
+    bio: "Built Ventro from scratch — backend, frontend, and everything in between. Loves clean code and meaningful products.",
     gradient: "from-violet-500/20 to-blue-600/20",
     border: "hover:border-violet-400/40",
     initials: "A",
@@ -30,9 +30,9 @@ const TEAM = [
     },
   },
   {
-    name: "Nexora AI",
+    name: "Ventro AI",
     role: "AI Co-Pilot",
-    bio: "The intelligence layer behind FUNDO. Recommends events, answers questions, and makes the whole experience feel magical.",
+    bio: "The intelligence layer behind Ventro. Recommends events, answers questions, and makes the whole experience feel magical.",
     gradient: "from-cyan-500/20 to-teal-600/20",
     border: "hover:border-cyan-400/40",
     initials: "N",
@@ -69,7 +69,7 @@ const VALUES = [
   {
     icon: Globe,
     title: "Built for Everyone",
-    desc: "Whether you're organizing a cricket match or a startup summit — FUNDO works for you.",
+    desc: "Whether you're organizing a cricket match or a startup summit — Ventro works for you.",
     color: "text-emerald-400",
     bg: "from-emerald-500/20 to-teal-600/20",
   },
@@ -114,7 +114,7 @@ export default function About() {
           transition={{ delay: 0.4 }}
           className="relative z-10 max-w-2xl text-lg text-zinc-400 leading-relaxed"
         >
-          FUNDO was born from a simple frustration: finding and managing events
+          Ventro was born from a simple frustration: finding and managing events
           was unnecessarily hard. We set out to fix that — with great design,
           smart AI, and a lot of care.
         </motion.p>
@@ -306,7 +306,7 @@ export default function About() {
             <h2 className="text-4xl md:text-5xl font-black mb-5">
               Join the{" "}
               <span className="bg-gradient-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
-                FUNDO family
+                Ventro family
               </span>
             </h2>
             <p className="text-zinc-400 text-lg mb-8 max-w-sm mx-auto">

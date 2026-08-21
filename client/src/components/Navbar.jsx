@@ -1,9 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { CalendarPlus, LogOut, Menu, X } from "lucide-react";
-import Features from "../pages/Features";
-import About from "../pages/About";
 
 const Navbar = () => {
   const { user, logout } = useAuth();

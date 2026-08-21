@@ -1,0 +1,5 @@
+# Docker Compose interpolation values
+.env
+.env.*
+!.env.example
+!.env.docker.example

@@ -67,6 +67,9 @@ const eventSchema = new mongoose.Schema(
 // Prevent an organiser from creating two events with the exact same name
 eventSchema.index({ createdBy: 1, title: 1 }, { unique: true });
 eventSchema.index({ date: 1 });
+eventSchema.index({ status: 1, date: 1 });
+eventSchema.index({ status: 1, category: 1, date: 1 });
+eventSchema.index({ createdBy: 1, createdAt: -1 });
 
 const Event = mongoose.model("Event", eventSchema);
 export default Event;

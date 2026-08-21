@@ -30,6 +30,8 @@ const CreateEvent = () => {
         console.error('Unable to refresh user before creating event', error);
       });
     }
+    // Refresh only when the authenticated account changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshUser, user?._id]);
 
   if (!user) {
@@ -100,9 +102,9 @@ const CreateEvent = () => {
     payload.append('image', formData.image);
 
     try {
-      const response = await api.post('/events', payload);
+      await api.post('/events', payload);
       toast.success('Event submitted for admin approval.');
-      navigate('/dashboard');
+      navigate('/dashboard?tab=events');
     } catch (error) {
       const message = error.response?.data?.message || 'Unable to create event.';
 

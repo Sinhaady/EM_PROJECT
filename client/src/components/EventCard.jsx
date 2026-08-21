@@ -5,10 +5,16 @@ const EventCard = ({ event }) => {
   return (
     <div className="bg-slate-900 rounded-xl shadow-sm border border-white/10 overflow-hidden hover:shadow-lg hover:shadow-black/30 transition-shadow duration-300 flex flex-col h-full">
       <div className="relative h-48 w-full overflow-hidden bg-slate-800">
+        <div className="absolute inset-0 flex items-center justify-center bg-linear-to-br from-slate-800 to-slate-950" aria-hidden="true">
+          <Calendar className="h-12 w-12 text-violet-300/40" />
+        </div>
         <img
           src={event.image?.url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800&q=80'}
-          alt={event.title}
-          className="w-full h-full object-cover"
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="relative w-full h-full object-cover"
+          onError={(error) => { error.currentTarget.hidden = true; }}
         />
         <div className="absolute top-4 left-4 bg-slate-950/85 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-bold text-violet-200 uppercase tracking-wide border border-white/10">
           {event.category}

@@ -96,7 +96,7 @@ const EventDetail = () => {
         key: razorpayKey,
         amount: order.amount,
         currency: order.currency,
-        name: 'EventM',
+        name: 'Ventro',
         description: event.title,
         order_id: order.id,
         prefill: {
@@ -205,6 +205,7 @@ const EventDetail = () => {
       <div className="w-full h-64 md:h-96 relative bg-gray-900">
         <img
           src={event.image?.url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=1200&q=80'}
+          decoding="async"
           alt={event.title}
           className="w-full h-full object-cover opacity-60"
         />

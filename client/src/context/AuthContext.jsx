@@ -1,10 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import api from '../api/axios';
+import api, { API_BASE_URL } from '../api/axios';
 import { clearToken, setToken as setApiToken } from '../api/token';
 
 const AuthContext = createContext(null);
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -24,6 +23,29 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
   };
+
+  useEffect(() => {
+    const handleTokenRefreshed = (event) => {
+      const newToken = event.detail;
+
+      if (newToken) {
+        setApiToken(newToken);
+        setToken(newToken);
+      }
+    };
+
+    const handleSessionExpired = () => {
+      clearSession();
+    };
+
+    window.addEventListener('auth:token-refreshed', handleTokenRefreshed);
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+
+    return () => {
+      window.removeEventListener('auth:token-refreshed', handleTokenRefreshed);
+      window.removeEventListener('auth:session-expired', handleSessionExpired);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -114,6 +136,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const logoutAllDevices = async () => {
+    try {
+      if (token || user) {
+        await api.post('/auth/logout-all');
+      }
+    } catch (error) {
+      console.error('Logout from all devices failed', error);
+      throw error;
+    } finally {
+      clearSession();
+    }
+  };
+
+  const getSessions = async () => {
+    const response = await api.get('/auth/sessions');
+    return response.data.sessions || [];
+  };
+
+  const revokeSession = async (sessionId) => {
+    const response = await api.delete(`/auth/sessions/${sessionId}`);
+
+    if (response.data.revokedCurrentSession) {
+      clearSession();
+    }
+
+    return response.data;
+  };
+
   if (isLoading) {
     return (
       <div
@@ -144,6 +194,9 @@ export const AuthProvider = ({ children }) => {
         loginWithGoogle,
         completeGoogleLogin,
         logout,
+        logoutAllDevices,
+        getSessions,
+        revokeSession,
       }}
     >
       {children}

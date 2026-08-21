@@ -2,6 +2,7 @@ import User from "../../models/User.js";
 import Event from "../../models/Event.js";
 import Booking from "../../models/Booking.js";
 import Transaction from "../../models/Transaction.js";
+import Session from "../../models/Session.js";
 import { sendEventCancelledEmail } from "../../utils/email.utils.js";
 import { PUBLIC_ASSIGNABLE_ROLES, ROLES, isSuperAdminEmail, toSafeUser } from "../../config/roles.js";
 
@@ -143,12 +144,20 @@ export const deleteMyAccount = async (req, res) => {
     await Transaction.deleteMany({
       userId,
     });
+    await Session.deleteMany({ user: userId });
 
     // Finally, delete the user
     await User.findByIdAndDelete(userId);
 
-    // Clear the JWT cookie
-    res.cookie("eventM_token", "", { httpOnly: true, expires: new Date(0) });
+    const expiredCookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: new Date(0),
+    };
+
+    res.cookie("eventM_token", "", expiredCookieOptions);
+    res.cookie("eventM_refreshToken", "", expiredCookieOptions);
     res.status(200).json({
       success: true,
       message: cancelledBookings > 0
@@ -174,7 +183,8 @@ export const getOrganizerStats = async (req, res) => {
     // 1. Get all events created by this organizer
     const events = await Event.find({ createdBy: organizerId })
       .select("_id title date price capacity registeredCount category status")
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .lean();
     const eventIds = events.map(e => e._id);
 
     const totalEvents = eventIds.length;
@@ -183,7 +193,7 @@ export const getOrganizerStats = async (req, res) => {
     const confirmedBookings = await Booking.find({
       event: { $in: eventIds },
       status: "CONFIRMED"
-    }).select("event tickets createdAt");
+    }).select("event tickets createdAt").lean();
 
     const byEvent = new Map(events.map((event) => [
       event._id.toString(),
@@ -251,8 +261,10 @@ export const getAllUsers = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const skip = (page - 1) * limit;
 
-    const users = await User.find().skip(skip).limit(limit).sort({ createdAt: -1 });
-    const total = await User.countDocuments();
+    const [users, total] = await Promise.all([
+      User.find().skip(skip).limit(limit).sort({ createdAt: -1 }).lean(),
+      User.countDocuments(),
+    ]);
 
     res.status(200).json({ success: true, count: users.length, total, page, users: users.map(toSafeUser) });
   } catch (error) {

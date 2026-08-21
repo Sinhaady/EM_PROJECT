@@ -6,6 +6,15 @@ const PUBLIC_EVENT_STATUS = "PUBLISHED";
 const MODERATION_STATUSES = ["PENDING", "PUBLISHED", "REJECTED"];
 const ORGANIZER_UPDATE_BLOCKLIST = new Set(["status", "createdBy", "registeredCount", "image"]);
 
+const imageUrlFor = (_req, eventId) => `/api/events/${eventId}/image`;
+
+const attachImageUrl = (req, event) => ({
+  ...event,
+  image: event.image
+    ? { ...event.image, url: imageUrlFor(req, event._id) }
+    : event.image,
+});
+
 const createImagePayload = (file) => ({
   url: `data:${file.mimetype};base64,${file.buffer.toString("base64")}`,
   publicId: `local-event-${Date.now()}-${file.originalname}`,
@@ -35,7 +44,9 @@ export const createEvent = async (req, res) => {
     };
 
     const event = await Event.create(eventData);
-    res.status(201).json({ success: true, event });
+    const result = event.toObject();
+    if (result.image) result.image.url = imageUrlFor(req, result._id);
+    res.status(201).json({ success: true, event: result });
 
   } catch (error) {
     if (error.code === 11000) {
@@ -54,16 +65,24 @@ export const createEvent = async (req, res) => {
 export const getAllEvents = async (req, res) => {
   try {
     const { category, type } = req.query;
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 100);
     let query = { status: PUBLIC_EVENT_STATUS };
     
     if (category) query.category = category;
     if (type) query.type = type;
 
     const events = await Event.find(query)
+      .select("-image.url")
       .sort({ date: 1 })
-      .populate("createdBy", "name email");
+      .limit(limit)
+      .populate("createdBy", "name email")
+      .lean();
 
-    res.status(200).json({ success: true, count: events.length, events });
+    res.status(200).json({
+      success: true,
+      count: events.length,
+      events: events.map((event) => attachImageUrl(req, event)),
+    });
   } catch (error) {
     console.error("Get All Events Error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -72,9 +91,33 @@ export const getAllEvents = async (req, res) => {
 
 // ─── @route  GET /api/events/categories ──────────────────────────────────────
 // ─── @access Public
+// The public-category handler follows the private organizer feed below.
+// @route  GET /api/events/mine
+// @access Private (Organizers & Admins)
+export const getMyEvents = async (req, res) => {
+  try {
+    const events = await Event.find({ createdBy: req.user.id })
+      .select("-image.url")
+      .sort({ createdAt: -1 })
+      .populate("createdBy", "name email")
+      .lean();
+
+    res.status(200).json({
+      success: true,
+      count: events.length,
+      events: events.map((event) => attachImageUrl(req, event)),
+    });
+  } catch (error) {
+    console.error("Get My Events Error:", error.message);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+// @route  GET /api/events/categories
+// @access Public
 export const getUniqueCategories = async (req, res) => {
   try {
-    const categories = await Event.distinct("category");
+    const categories = await Event.distinct("category", { status: PUBLIC_EVENT_STATUS });
     res.status(200).json({ 
       success: true, 
       count: categories.length, 
@@ -90,7 +133,10 @@ export const getUniqueCategories = async (req, res) => {
 // ─── @access Public
 export const getEventById = async (req, res) => {
   try {
-    const event = await Event.findById(req.params.id).populate("createdBy", "name email");
+    const event = await Event.findById(req.params.id)
+      .select("-image.url")
+      .populate("createdBy", "name email")
+      .lean();
 
     if (!event) {
       return res.status(404).json({ success: false, message: "Event not found" });
@@ -100,7 +146,7 @@ export const getEventById = async (req, res) => {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
 
-    res.status(200).json({ success: true, event });
+    res.status(200).json({ success: true, event: attachImageUrl(req, event) });
   } catch (error) {
     console.error("Get Event By ID Error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -111,22 +157,21 @@ export const getEventById = async (req, res) => {
 // ─── @access Private (Event Owner or Admin)
 export const updateEvent = async (req, res) => {
   try {
-    let event = await Event.findById(req.params.id);
-
-    if (!event) {
-      return res.status(404).json({ success: false, message: "Event not found" });
-    }
-
-    if (event.createdBy.toString() !== req.user.id && req.user.role !== "super_admin") {
-      return res.status(403).json({ success: false, message: "You are not authorized to edit this event" });
-    }
-
-    event = await Event.findByIdAndUpdate(req.params.id, buildOrganizerUpdate(req.body), {
+    const ownershipFilter = req.user.role === "super_admin"
+      ? { _id: req.params.id }
+      : { _id: req.params.id, createdBy: req.user.id };
+    const event = await Event.findOneAndUpdate(ownershipFilter, buildOrganizerUpdate(req.body), {
       new: true,
       runValidators: true,
-    });
+    }).select("-image.url");
 
-    res.status(200).json({ success: true, event });
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found or not editable" });
+    }
+
+    const result = event.toObject();
+    if (result.image) result.image.url = imageUrlFor(req, result._id);
+    res.status(200).json({ success: true, event: result });
   } catch (error) {
     console.error("Update Event Error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -199,6 +244,37 @@ export const joinEvent = async (req, res) => {
   }
 };
 
+// Serve the stored image as cacheable binary instead of embedding Base64 in API JSON.
+export const getEventImage = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id)
+      .select("image.url updatedAt")
+      .lean();
+    const storedUrl = event?.image?.url;
+
+    // Older records use Cloudinary URLs; preserve compatibility with them.
+    if (/^https?:\/\//i.test(storedUrl || "")) {
+      res.set("Cache-Control", "public, max-age=86400");
+      return res.redirect(302, storedUrl);
+    }
+
+    const match = storedUrl?.match(/^data:([^;]+);base64,(.+)$/s);
+
+    if (!match) {
+      return res.status(404).end();
+    }
+
+    res.set({
+      "Content-Type": match[1],
+      "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+      "Last-Modified": new Date(event.updatedAt).toUTCString(),
+    });
+    return res.send(Buffer.from(match[2], "base64"));
+  } catch (error) {
+    return res.status(404).end();
+  }
+};
+
 // @route  GET /api/events/moderation
 // @access Private (Fixed Super Admin)
 export const getModerationEvents = async (req, res) => {
@@ -210,10 +286,16 @@ export const getModerationEvents = async (req, res) => {
     }
 
     const events = await Event.find({ status })
+      .select("-image.url")
       .sort({ createdAt: -1 })
-      .populate("createdBy", "name email");
+      .populate("createdBy", "name email")
+      .lean();
 
-    res.status(200).json({ success: true, count: events.length, events });
+    res.status(200).json({
+      success: true,
+      count: events.length,
+      events: events.map((event) => attachImageUrl(req, event)),
+    });
   } catch (error) {
     console.error("Get Moderation Events Error:", error.message);
     res.status(500).json({ success: false, message: "Server error" });
@@ -237,7 +319,10 @@ export const moderateEvent = async (req, res) => {
       req.params.id,
       { status },
       { new: true, runValidators: true },
-    ).populate("createdBy", "name email");
+    )
+      .select("-image.url")
+      .populate("createdBy", "name email")
+      .lean();
 
     if (!event) {
       return res.status(404).json({ success: false, message: "Event not found" });
@@ -246,7 +331,7 @@ export const moderateEvent = async (req, res) => {
     res.status(200).json({
       success: true,
       message: status === "PUBLISHED" ? "Event approved" : "Event rejected",
-      event,
+      event: attachImageUrl(req, event),
     });
   } catch (error) {
     console.error("Moderate Event Error:", error.message);

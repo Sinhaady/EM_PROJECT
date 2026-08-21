@@ -4,7 +4,9 @@ import express from "express";
 import {
   createEvent,
   getAllEvents,
+  getMyEvents,
   getEventById,
+  getEventImage,
   updateEvent,
   deleteEvent,
   getUniqueCategories,
@@ -21,7 +23,9 @@ const router = express.Router();
 
 router.get("/", getAllEvents);
 router.get("/categories/unique", getUniqueCategories);
+router.get("/mine", verifyToken, requireOrganizer, getMyEvents);
 router.get("/moderation", verifyToken, requireSuperAdmin, getModerationEvents);
+router.get("/:id/image", getEventImage);
 router.get("/:id", getEventById);
 
 // ─── Protected Routes (Managing Events) ──────────────────────────────────────

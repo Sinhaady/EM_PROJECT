@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "react-toastify";
@@ -6,9 +6,9 @@ import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
 import {
   LayoutDashboard, Ticket, BarChart3, User, Calendar, CalendarPlus,
-  MapPin, Clock, ChevronRight, LogOut, Settings,
+  MapPin, Clock, ChevronRight, LogOut,
   TrendingUp, Star, Bell, Search, Menu, X,
-  CheckCircle, XCircle, AlertCircle, Download, ExternalLink, Trash2,
+  CheckCircle, Download, ExternalLink, Trash2,
 } from "lucide-react";
 
 // ── Animation variants ─────────────────────────────────────────────────────────
@@ -30,6 +30,30 @@ const isPast = (d) => new Date(d) <= new Date();
 const getImageUrl = (image) => (typeof image === "string" ? image : image?.url);
 const safeFileName = (value = "ticket") =>
   value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ticket";
+const getSessionDevice = (userAgent = "") => {
+  const browser =
+    userAgent.includes("Edg/")
+      ? "Microsoft Edge"
+      : userAgent.includes("Chrome/")
+        ? "Chrome"
+        : userAgent.includes("Firefox/")
+          ? "Firefox"
+          : userAgent.includes("Safari/")
+            ? "Safari"
+            : "Browser";
+  const platform =
+    userAgent.includes("Windows")
+      ? "Windows"
+      : userAgent.includes("Mac")
+        ? "macOS"
+        : userAgent.includes("Android")
+          ? "Android"
+          : userAgent.includes("iPhone") || userAgent.includes("iPad")
+            ? "iOS"
+            : "Unknown device";
+
+  return `${browser} on ${platform}`;
+};
 
 const drawWrappedText = (ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) => {
   const words = String(text || "").split(" ");
@@ -238,9 +262,21 @@ const EventRow = ({ event, onLeave }) => {
       className="group flex flex-col sm:flex-row sm:items-center gap-4 rounded-[20px] border border-white/8 bg-white/4 hover:bg-white/7 hover:border-white/15 p-5 transition-all duration-300 backdrop-blur-xl"
     >
       {/* Image / placeholder */}
-      <div className="shrink-0 h-16 w-16 rounded-2xl overflow-hidden bg-white/10">
+      <div className="relative shrink-0 h-16 w-16 rounded-2xl overflow-hidden bg-white/10">
         {imageUrl ? (
-          <img src={imageUrl} alt={event.title} className="h-full w-full object-cover" />
+          <>
+            <div className={`absolute inset-0 flex items-center justify-center ${colors.bg}`} aria-hidden="true">
+              <Calendar className={`h-7 w-7 ${colors.text}`} />
+            </div>
+            <img
+              src={imageUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="relative h-full w-full object-cover"
+              onError={(error) => { error.currentTarget.hidden = true; }}
+            />
+          </>
         ) : (
           <div className={`h-full w-full flex items-center justify-center ${colors.bg}`}>
             <Calendar className={`h-7 w-7 ${colors.text}`} />
@@ -267,12 +303,17 @@ const EventRow = ({ event, onLeave }) => {
 
       {/* Actions */}
       <div className="flex items-center gap-2 shrink-0">
-        <Link to={`/events/${event._id}`}>
-          <button className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:border-white/25 transition-all">
-            <ExternalLink className="h-4 w-4" />
-          </button>
-        </Link>
-        {upcoming && (
+        {(!event.status || event.status === "PUBLISHED") && (
+          <Link to={`/events/${event._id}`}>
+            <button
+              aria-label={`View ${event.title}`}
+              className="h-9 w-9 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center text-zinc-400 hover:text-white hover:border-white/25 transition-all"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </button>
+          </Link>
+        )}
+        {upcoming && event.bookingId && onLeave && (
           <button
             onClick={() => onLeave(event.bookingId)}
             className="h-9 px-3 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-all"
@@ -287,11 +328,21 @@ const EventRow = ({ event, onLeave }) => {
 
 // ── Main Dashboard ─────────────────────────────────────────────────────────────
 export default function Dashboard() {
-  const { refreshUser, user, logout } = useAuth();
+  const { refreshUser, user, logout, logoutAllDevices, getSessions, revokeSession } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    return ["overview", "events", "tickets", "stats", "profile"].includes(requestedTab)
+      ? requestedTab
+      : "overview";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [eventFilter, setEventFilter] = useState("all");
+  const [eventView, setEventView] = useState(
+    user?.role === "organizer" || user?.role === "super_admin" ? "hosted" : "joined",
+  );
   const [bookings, setBookings] = useState([]);
+  const [hostedEvents, setHostedEvents] = useState([]);
   const [organizerStats, setOrganizerStats] = useState({
     totalEvents: 0,
     totalBookings: 0,
@@ -303,23 +354,14 @@ export default function Dashboard() {
   const [accountRole, setAccountRole] = useState(user?.role || "attendee");
   const [profileForm, setProfileForm] = useState({ name: user?.name || "", bio: "", phone: "" });
   const [saveStatus, setSaveStatus] = useState(null); // "saving" | "saved" | "error"
+  const [isLoggingOutAllDevices, setIsLoggingOutAllDevices] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [sessions, setSessions] = useState([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState(null);
+  const hasLoadedDashboard = useRef(false);
 
-  useEffect(() => {
-    fetchDashboard();
-  }, []);
-
-  useEffect(() => {
-    setProfileForm((current) => ({
-      ...current,
-      name: user?.name || current.name,
-      bio: user?.bio || current.bio || "",
-      phone: user?.phone || current.phone || "",
-    }));
-    setAccountRole(user?.role || "attendee");
-  }, [user]);
-
-  const fetchDashboard = async () => {
+  async function fetchDashboard() {
     try {
       setLoading(true);
       const [bookingsResponse, profileResponse] = await Promise.all([
@@ -339,16 +381,21 @@ export default function Dashboard() {
 
       if (profile?.role === "organizer" || profile?.role === "super_admin") {
         try {
-          const organizerResponse = await api.get("/users/organizer-stats");
+          const [organizerResponse, hostedResponse] = await Promise.all([
+            api.get("/users/organizer-stats"),
+            api.get("/events/mine"),
+          ]);
           setOrganizerStats((current) => ({
             ...current,
             ...(organizerResponse.data.stats || {}),
             perEventSales: organizerResponse.data.stats?.perEventSales || [],
           }));
+          setHostedEvents(hostedResponse.data.events || []);
         } catch (statsError) {
-          console.error("Organizer stats load failed", statsError);
+          console.error("Organizer dashboard load failed", statsError);
         }
       } else {
+        setHostedEvents([]);
         setOrganizerStats({
           totalEvents: 0,
           totalBookings: 0,
@@ -356,6 +403,18 @@ export default function Dashboard() {
           totalRevenue: 0,
           perEventSales: [],
         });
+      }
+
+      if (getSessions) {
+        setSessionsLoading(true);
+        try {
+          const activeSessions = await getSessions();
+          setSessions(activeSessions);
+        } catch (sessionError) {
+          console.error("Session list load failed", sessionError);
+        } finally {
+          setSessionsLoading(false);
+        }
       }
     } catch (error) {
       console.error("Dashboard load failed", error);
@@ -365,7 +424,14 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    if (hasLoadedDashboard.current) return;
+    hasLoadedDashboard.current = true;
+    fetchDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLeave = async (bookingId) => {
     try {
@@ -404,6 +470,57 @@ export default function Dashboard() {
   const handleLogout = async () => {
     await logout();
     navigate("/login");
+  };
+
+  const handleLogoutAllDevices = async () => {
+    const confirmed = window.confirm(
+      "Log out from all devices? You will need to log in again everywhere.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsLoggingOutAllDevices(true);
+    try {
+      await logoutAllDevices();
+      toast.success("Logged out from all devices.");
+    } catch (error) {
+      console.error("Logout from all devices failed", error);
+      toast.error("This browser was signed out, but all-device logout could not be confirmed.");
+    } finally {
+      navigate("/login");
+    }
+  };
+
+  const handleRevokeSession = async (session) => {
+    const confirmed = window.confirm(
+      session.isCurrent
+        ? "This is your current session. Revoke it and log out now?"
+        : "Log out this device session?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setRevokingSessionId(session.id);
+    try {
+      const result = await revokeSession(session.id);
+      toast.success(result.revokedCurrentSession ? "Current session ended." : "Session revoked.");
+
+      if (result.revokedCurrentSession) {
+        navigate("/login");
+        return;
+      }
+
+      setSessions((current) => current.filter((item) => item.id !== session.id));
+    } catch (error) {
+      console.error("Session revoke failed", error);
+      toast.error(error.response?.data?.message || "Unable to revoke this session.");
+    } finally {
+      setRevokingSessionId(null);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -464,7 +581,7 @@ export default function Dashboard() {
           <div className="h-8 w-8 rounded-xl bg-linear-to-br from-violet-600 to-cyan-500 flex items-center justify-center">
             <span className="text-xs font-black text-white">F</span>
           </div>
-          <span className="text-lg font-black text-white">FUNDO</span>
+          <span className="text-lg font-black text-white">Ventro</span>
         </Link>
       </div>
 
@@ -574,10 +691,10 @@ export default function Dashboard() {
 
   // ── Tab: My Events ─────────────────────────────────────────────────────────
   const EventsTab = () => {
-    const [filter, setFilter] = useState("all");
-    const filtered = joinedEvents.filter((e) => {
-      if (filter === "upcoming") return isUpcoming(e.date);
-      if (filter === "past")     return isPast(e.date);
+    const sourceEvents = eventView === "hosted" ? hostedEvents : joinedEvents;
+    const filtered = sourceEvents.filter((e) => {
+      if (eventFilter === "upcoming") return isUpcoming(e.date);
+      if (eventFilter === "past")     return isPast(e.date);
       return true;
     });
 
@@ -586,7 +703,11 @@ export default function Dashboard() {
         <motion.div variants={fadeUp} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-black text-white">My Events</h1>
-            <p className="text-zinc-400 text-sm">{joinedEvents.length} events joined</p>
+            <p className="text-zinc-400 text-sm">
+              {isOrganizer
+                ? `${hostedEvents.length} hosted · ${joinedEvents.length} joined`
+                : `${joinedEvents.length} events joined`}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/events/new">
@@ -602,14 +723,32 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
+        {isOrganizer && (
+          <motion.div variants={fadeUp} className="flex gap-2 border-b border-white/8 pb-4">
+            {[{ id: "hosted", label: "Hosted by me" }, { id: "joined", label: "Joined" }].map((view) => (
+              <button
+                key={view.id}
+                onClick={() => { setEventView(view.id); setEventFilter("all"); }}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  eventView === view.id
+                    ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                    : "text-zinc-400 hover:text-white border border-transparent"
+                }`}
+              >
+                {view.label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+
         {/* Filter pills */}
         <motion.div variants={fadeUp} className="flex gap-2">
           {["all", "upcoming", "past"].map((f) => (
             <button
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => setEventFilter(f)}
               className={`px-4 py-2 rounded-full text-xs font-bold capitalize transition-all ${
-                filter === f
+                eventFilter === f
                   ? "bg-linear-to-r from-violet-600 to-cyan-500 text-white shadow-md"
                   : "border border-white/10 bg-white/5 text-zinc-400 hover:text-white"
               }`}
@@ -624,14 +763,41 @@ export default function Dashboard() {
           <div className="rounded-[20px] border border-white/8 bg-white/4 p-12 text-center text-zinc-500 text-sm">Loading events...</div>
         ) : filtered.length > 0 ? (
           <motion.div variants={stagger} className="space-y-3">
-            {filtered.map((e) => <EventRow key={e._id} event={e} onLeave={handleLeave} />)}
+            {filtered.map((e) => (
+              <div key={e._id} className="space-y-2">
+                {eventView === "hosted" && (
+                  <div className="flex items-center justify-between px-1">
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-black tracking-wider ${
+                      e.status === "PUBLISHED"
+                        ? "bg-emerald-500/15 text-emerald-300"
+                        : e.status === "REJECTED"
+                          ? "bg-rose-500/15 text-rose-300"
+                          : "bg-amber-500/15 text-amber-300"
+                    }`}>
+                      {e.status || "PENDING"}
+                    </span>
+                    <span className="text-xs text-zinc-500">
+                      {e.registeredCount || 0}/{e.capacity || 0} seats booked
+                    </span>
+                  </div>
+                )}
+                <EventRow
+                  event={{ ...e, bookingId: eventView === "hosted" ? null : e.bookingId }}
+                  onLeave={eventView === "joined" ? handleLeave : undefined}
+                />
+              </div>
+            ))}
           </motion.div>
         ) : (
           <div className="rounded-[20px] border border-white/8 bg-white/4 p-12 text-center">
             <Calendar className="h-12 w-12 text-zinc-700 mx-auto mb-4" />
-            <p className="text-zinc-300 font-semibold mb-1">No {filter !== "all" ? filter : ""} events found</p>
+            <p className="text-zinc-300 font-semibold mb-1">No {eventFilter !== "all" ? eventFilter : ""} events found</p>
             <p className="text-zinc-500 text-sm">
-              {filter === "upcoming" ? "Join some upcoming events to see them here." : "You haven't joined any events yet."}
+              {eventView === "hosted"
+                ? "Create an event and it will appear here while it awaits approval."
+                : eventFilter === "upcoming"
+                  ? "Join some upcoming events to see them here."
+                  : "You haven't joined any events yet."}
             </p>
           </div>
         )}
@@ -989,6 +1155,59 @@ export default function Dashboard() {
         </button>
       </motion.div>
 
+      {/* Security */}
+      <motion.div variants={fadeUp} className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-7">
+        <h3 className="text-base font-black text-white mb-1">Account Security</h3>
+        <p className="text-zinc-400 text-sm mb-5">Review active login sessions and end access on devices you no longer use.</p>
+        <div className="mb-5 space-y-3">
+          {sessionsLoading ? (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-400">
+              Loading active sessions...
+            </div>
+          ) : sessions.length > 0 ? (
+            sessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-bold text-white">{getSessionDevice(session.userAgent)}</p>
+                    {session.isCurrent && (
+                      <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-300">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Last active {fmtDate(session.lastUsedAt)} at {fmtTime(session.lastUsedAt)}
+                    {session.ipAddress ? ` · ${session.ipAddress}` : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => handleRevokeSession(session)}
+                  disabled={revokingSessionId === session.id}
+                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-zinc-300 hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-300 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {revokingSessionId === session.id ? "Ending..." : session.isCurrent ? "End This Session" : "Logout Device"}
+                </button>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-400">
+              No active session records found for this account.
+            </div>
+          )}
+        </div>
+        <button
+          onClick={handleLogoutAllDevices}
+          disabled={isLoggingOutAllDevices}
+          className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <LogOut className="h-4 w-4" /> {isLoggingOutAllDevices ? "Signing out..." : "Logout All Devices"}
+        </button>
+      </motion.div>
+
       {/* Danger zone */}
       <motion.div variants={fadeUp} className="rounded-3xl border border-rose-500/20 bg-rose-500/5 p-7">
         <h3 className="text-base font-black text-white mb-1">Delete Account</h3>
@@ -1005,8 +1224,13 @@ export default function Dashboard() {
   );
 
   // ── Tab router ─────────────────────────────────────────────────────────────
-  const TABS = { overview: OverviewTab, events: EventsTab, tickets: TicketsTab, stats: StatsTab, profile: ProfileTab };
-  const ActiveTab = TABS[activeTab] || OverviewTab;
+  const renderActiveTab = () => {
+    if (activeTab === "events") return EventsTab();
+    if (activeTab === "tickets") return TicketsTab();
+    if (activeTab === "stats") return StatsTab();
+    if (activeTab === "profile") return ProfileTab();
+    return OverviewTab();
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1014,7 +1238,7 @@ export default function Dashboard() {
 
       {/* Desktop sidebar */}
       <div className="hidden lg:flex flex-col w-64 border-r border-white/8 bg-white/2 shrink-0">
-        <Sidebar />
+        {Sidebar({})}
       </div>
 
       {/* Mobile sidebar overlay */}
@@ -1036,7 +1260,7 @@ export default function Dashboard() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <Sidebar mobile />
+              {Sidebar({ mobile: true })}
             </motion.div>
           </>
         )}
@@ -1094,7 +1318,7 @@ export default function Dashboard() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.3 }}
               >
-                <ActiveTab />
+                {renderActiveTab()}
               </motion.div>
             </AnimatePresence>
           </div>

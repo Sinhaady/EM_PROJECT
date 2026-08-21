@@ -110,7 +110,7 @@ const Register = () => {
               </div>
 
               <div>
-                <h1 className="text-3xl font-bold">Nexora</h1>
+                <h1 className="text-3xl font-bold">Ventro</h1>
                 <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
                   AI Event Platform
                 </p>
@@ -170,7 +170,7 @@ const Register = () => {
               </div>
 
               <div>
-                <h1 className="text-xl font-bold">Nexora</h1>
+                <h1 className="text-xl font-bold">Ventro</h1>
                 <p className="text-xs uppercase tracking-widest text-zinc-500">
                   AI Platform
                 </p>

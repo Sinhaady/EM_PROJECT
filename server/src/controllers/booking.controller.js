@@ -31,6 +31,23 @@ const sendBookingEmail = (user, event, booking) => {
   });
 };
 
+const attachEventImageUrl = (req, booking) => {
+  if (!booking.event?._id) return booking;
+
+  return {
+    ...booking,
+    event: {
+      ...booking.event,
+      image: booking.event.image
+        ? {
+            ...booking.event.image,
+            url: `/api/events/${booking.event._id}/image`,
+          }
+        : booking.event.image,
+    },
+  };
+};
+
 export const createBookingOrder = async (req, res) => {
   try {
     const { eventId, tickets } = req.body;
@@ -219,10 +236,14 @@ export const verifyPayment = async (req, res) => {
 export const getMyBookings = async (req, res) => {
   try {
     const bookings = await Booking.find({ user: req.user.id })
-      .populate("event", "title date location image category price capacity registeredCount status")
-      .sort({ createdAt: -1 });
+      .populate("event", "title date location image.publicId category price capacity registeredCount status")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.status(200).json({ success: true, bookings });
+    res.status(200).json({
+      success: true,
+      bookings: bookings.map((booking) => attachEventImageUrl(req, booking)),
+    });
   } catch (error) {
     console.error("Get My Bookings Error:", error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -232,8 +253,9 @@ export const getMyBookings = async (req, res) => {
 export const getBookingById = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
-      .populate("event", "title date location image")
-      .populate("user", "name email");
+      .populate("event", "title date location image.publicId")
+      .populate("user", "name email")
+      .lean();
 
     if (!booking) {
       return res.status(404).json({ success: false, message: "Booking not found" });
@@ -246,7 +268,7 @@ export const getBookingById = async (req, res) => {
       });
     }
 
-    res.status(200).json({ success: true, booking });
+    res.status(200).json({ success: true, booking: attachEventImageUrl(req, booking) });
   } catch (error) {
     console.error("Get Booking By ID Error:", error);
     res.status(500).json({ success: false, message: "Server error" });

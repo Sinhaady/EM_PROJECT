@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Bell,
   CalendarCheck,
   Check,
@@ -19,7 +18,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import api from '../api/axios';
@@ -107,6 +106,7 @@ const EmptyState = ({ children }) => (
 );
 
 const SuperAdminDashboard = () => {
+  const hasLoadedDashboard = useRef(false);
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview');
@@ -153,9 +153,9 @@ const SuperAdminDashboard = () => {
   };
 
   useEffect(() => {
-    if (isSuperAdmin) {
-      loadDashboard();
-    }
+    if (!isSuperAdmin || hasLoadedDashboard.current) return;
+    hasLoadedDashboard.current = true;
+    loadDashboard();
   }, [isSuperAdmin]);
 
   const handleLogout = async () => {
@@ -275,7 +275,7 @@ const SuperAdminDashboard = () => {
           {pendingEvents.map((event) => (
             <article key={event._id} className="grid gap-4 rounded-lg border border-white/10 bg-[#171717] p-4 lg:grid-cols-[160px_1fr_auto]">
               <div className="aspect-video overflow-hidden rounded-md bg-zinc-900 lg:aspect-square">
-                <img src={event.image?.url} alt={event.title} className="h-full w-full object-cover" />
+                <img src={event.image?.url} alt={event.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
               </div>
 
               <div className="min-w-0">
@@ -413,7 +413,7 @@ const SuperAdminDashboard = () => {
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-white/10 bg-[#1a1a1a] lg:flex lg:flex-col">
         <div className="flex h-16 items-center gap-3 border-b border-white/10 px-5">
           <Crown className="h-5 w-5 text-sky-400" />
-          <span className="text-lg font-black text-white">FUNDO admin</span>
+          <span className="text-lg font-black text-white">Ventro admin</span>
         </div>
 
         <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-5">

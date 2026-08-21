@@ -27,6 +27,7 @@ export const verifyToken = (req, res, next) => {
         role: getEffectiveRole(user),
         authProvider: user.authProvider,
       };
+      req.sessionId = info?.sessionId || null;
 
       next();
     }

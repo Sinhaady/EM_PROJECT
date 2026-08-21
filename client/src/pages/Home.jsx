@@ -23,7 +23,7 @@ const stagger = {
 
 // ── Static demo chat messages ──────────────────────────────────────────────────
 const chatMessages = [
-  { _id: 1, role: "assistant", text: "Hi! I'm Nexora. What kind of event are you looking for?" },
+  { _id: 1, role: "assistant", text: "Hi! I'm Ventro. What kind of event are you looking for?" },
   { _id: 2, role: "user",      text: "Something fun this weekend in Patna 🎉" },
   { _id: 3, role: "assistant", text: "Found 3 events near you — a comedy night, a cricket match, and a music fest. Want details?" },
 ];
@@ -112,12 +112,19 @@ const MiniCard = ({ card }) => (
   <div
     className={`w-52.5 rounded-[22px] overflow-hidden border border-white/10 bg-linear-to-br ${card.color} backdrop-blur-xl shadow-xl shrink-0 mb-4`}
   >
-    <div className="h-31.25 w-full overflow-hidden">
+    <div className="relative h-31.25 w-full overflow-hidden bg-linear-to-br from-slate-800 to-slate-950">
+      <div className="absolute inset-0 flex items-center justify-center" aria-hidden="true">
+        <span className={`text-5xl font-black opacity-40 ${card.accent}`}>
+          {card.category.charAt(0)}
+        </span>
+      </div>
       <img
         src={card.img}
-        alt={card.title}
-        className="h-full w-full object-cover opacity-90"
-        onError={(e) => { e.currentTarget.style.background = '#1e293b'; }}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="relative h-full w-full object-cover opacity-90"
+        onError={(event) => { event.currentTarget.hidden = true; }}
       />
     </div>
     <div className="p-4">
@@ -173,7 +180,7 @@ const Home = () => {
     const fetchEvents = async () => {
       try {
         const response = await api.get('/events', {
-          params: { status: 'PUBLISHED' },
+          params: { status: 'PUBLISHED', limit: 3 },
         });
         setEvents(response.data.events?.slice(0, 3) || []);
       } catch (error) {
@@ -405,7 +412,7 @@ const Home = () => {
 
             <div className="relative z-10 flex-1">
               <h2 className="mb-5 text-4xl font-black leading-tight md:text-5xl">
-                Ask Nexora AI
+                Ask Ventro AI
                 <br />
                 <span className="bg-linear-to-r from-violet-400 to-cyan-400 bg-clip-text text-transparent">
                   Anything
@@ -428,7 +435,7 @@ const Home = () => {
             <div className="relative z-10 w-full max-w-md rounded-4xl border border-white/10 bg-black/30 p-5 backdrop-blur-2xl">
               <div className="mb-4 flex items-center gap-2 border-b border-white/10 pb-4">
                 <div className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-xs text-zinc-400 font-medium">Nexora AI</span>
+                <span className="text-xs text-zinc-400 font-medium">Ventro AI</span>
               </div>
               {chatMessages.map((msg) => (
                 <div key={msg._id} className={`mb-4 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>

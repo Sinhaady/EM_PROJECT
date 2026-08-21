@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
   Sparkles, Zap, Shield, Bell, Map, Ticket,
-  BarChart3, Globe, MessageSquare, Calendar, Users, CreditCard,
+  BarChart3, MessageSquare, Calendar, Users,
 } from "lucide-react";
 
 const fadeUp = {
@@ -18,7 +18,7 @@ const FEATURES = [
   {
     icon: Sparkles,
     title: "AI-Powered Discovery",
-    desc: "Nexora AI learns your taste and surfaces events you'll actually love — before you even search for them.",
+    desc: "Ventro AI learns your taste and surfaces events you'll actually love — before you even search for them.",
     gradient: "from-violet-500/20 to-purple-600/20",
     border: "hover:border-violet-400/40",
     accent: "text-violet-400",
@@ -81,7 +81,7 @@ const FEATURES = [
   {
     icon: MessageSquare,
     title: "AI Chat Assistant",
-    desc: "Ask Nexora anything — 'find me a jazz event this Saturday' — and get curated results instantly.",
+    desc: "Ask Ventro anything — 'find me a jazz event this Saturday' — and get curated results instantly.",
     gradient: "from-fuchsia-500/20 to-violet-600/20",
     border: "hover:border-fuchsia-400/40",
     accent: "text-fuchsia-400",
@@ -147,7 +147,7 @@ export default function Features() {
           className="relative z-10 max-w-xl text-lg text-zinc-400 leading-relaxed mb-10"
         >
           From AI-powered discovery to seamless ticketing and analytics —
-          FUNDO gives organizers and attendees everything in one place.
+          Ventro gives organizers and attendees everything in one place.
         </motion.p>
 
         <motion.div
@@ -259,7 +259,7 @@ export default function Features() {
               </span>
             </h2>
             <p className="text-zinc-400 text-lg mb-8 max-w-md mx-auto">
-              Join thousands of organizers already using FUNDO to create unforgettable experiences.
+              Join thousands of organizers already using Ventro to create unforgettable experiences.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link to="/register">

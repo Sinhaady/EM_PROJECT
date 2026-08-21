@@ -63,3 +63,10 @@ export const startEventReminderScheduler = () => {
     });
   }, ONE_HOUR_MS);
 };
+
+export const stopEventReminderScheduler = () => {
+  if (reminderTimer) {
+    clearInterval(reminderTimer);
+    reminderTimer = null;
+  }
+};

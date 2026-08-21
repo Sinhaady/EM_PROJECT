@@ -14,23 +14,18 @@
   "license": "ISC",
   "dependencies": {
     "bcrypt": "^6.0.0",
-    "bcryptjs": "^3.0.3",
-    "cloudinary": "^1.41.3",
     "cors": "^2.8.6",
-    "crypto": "^1.0.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mongoose": "^9.6.3",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "multer-storage-cloudinary": "^4.0.0",
-    "nodemailer": "^8.0.10",
+    "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
-    "razorpay": "^2.9.6",
-    "stripe": "^22.2.0"
+    "razorpay": "^2.9.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

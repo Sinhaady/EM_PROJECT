@@ -2,7 +2,11 @@ import express from "express";
 import {
   register,
   login,
+  refreshToken,
   logout,
+  logoutAllDevices,
+  listSessions,
+  revokeSession,
   getMe,
   googleAuth,
   googleCallback,
@@ -27,13 +31,17 @@ router.get("/login", (req, res) => {
   });
 });
 router.post("/login", login);
+router.post("/refresh", refreshToken);
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
 router.get("/google", googleAuth);
 router.get("/google/callback", googleCallback);
 
 // ─── Private routes ───────────────────────────────────────────────────────────
-router.post("/logout", verifyToken, logout);
+router.post("/logout", logout);
+router.post("/logout-all", verifyToken, logoutAllDevices);
+router.get("/sessions", verifyToken, listSessions);
+router.delete("/sessions/:sessionId", verifyToken, revokeSession);
 router.get("/me", verifyToken, getMe);
 
 export default router;

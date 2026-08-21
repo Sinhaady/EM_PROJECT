@@ -4,6 +4,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import User from "../models/User.js";
+import Session from "../models/Session.js";
 
 dotenv.config({ quiet: true });
 
@@ -58,8 +59,6 @@ passport.use(
         // compare password
 
         const isMatch = await user.matchPassword(password);
-        console.log("Match:", isMatch);
-
         if (!isMatch) {
           return done(null, false, { message: "Invalid email or password" });
         }
@@ -153,7 +152,17 @@ passport.use(
     },
     async (jwtPayload, done) => {
       try {
-        const user = await User.findById(jwtPayload.id);
+        const [user, session] = await Promise.all([
+          User.findById(jwtPayload.id),
+          jwtPayload.sessionId
+            ? Session.findOne({
+                _id: jwtPayload.sessionId,
+                user: jwtPayload.id,
+                isRevoked: false,
+                expiresAt: { $gt: new Date() },
+              })
+            : null,
+        ]);
 
         if (!user) {
           return done(null, false, {
@@ -161,7 +170,27 @@ passport.use(
           });
         }
 
-        return done(null, user);
+        if (!session) {
+          return done(null, false, {
+            message: "Session expired. Please log in again.",
+          });
+        }
+
+        if (
+          (jwtPayload.sessionVersion ?? 0) !== (user.sessionVersion ?? 0) ||
+          session.sessionVersion !== (user.sessionVersion ?? 0)
+        ) {
+          return done(null, false, {
+            message: "Session has been signed out. Please log in again.",
+          });
+        }
+
+        session.lastUsedAt = new Date();
+        session.save().catch((saveError) => {
+          console.error("Session touch failed:", saveError);
+        });
+
+        return done(null, user, { sessionId: session._id.toString() });
       } catch (error) {
         console.error("JWT Strategy Error:", error);
 
